@@ -168,11 +168,25 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
     return <MotionWrap reduced={reducedMotion}><section className="mx-auto flex min-h-[34vh] max-w-page items-center justify-center px-6"><div className="w-full border-l-2 border-gold/45 bg-white/35 px-6 py-8 shadow-sm"><div className="font-script text-2xl text-gold">в этот день</div><div className="mt-2 font-serif text-2xl text-burgundy">{wallClockDate(row.occurred_at)}</div>{previous && <p className="mt-5 whitespace-pre-wrap font-serif text-xl italic leading-relaxed text-ink/80">«{previous}»</p>}</div></section></MotionWrap>;
   }
 
-  const text = row.display_text ?? row.original_text;
+  // BUGFIX: memory/special-moment text (`memory_body`, typed in Admin →
+  // Воспоминания/Особенные) and screenshot captions were fetched from the
+  // DB into every row but never actually rendered here — `text` only ever
+  // looked at `display_text`/`original_text`, which are message-only
+  // columns and are null for memory/screenshot rows. That's why manually
+  // added "особые моменты" appeared with just the label and no text.
+  const text = row.memory_id
+    ? row.memory_body ?? null
+    : row.screenshot_id
+    ? row.screenshot_caption ?? row.screenshot_description ?? null
+    : row.display_text ?? row.original_text;
+  const title = row.memory_id ? row.memory_title : row.screenshot_id ? row.screenshot_title : null;
   const frame = typeof row.style?.frame === 'string' ? row.style.frame : 'minimal';
   const label = row.mood ? moodLabel[row.mood] : '';
   const media = Boolean(row.media_id || row.screenshot_id || row.memory_photo_storage_path);
   const isSpecial = row.type === 'special' || row.metadata?.kind === 'special';
+  // Per-element override (Admin → Оформление → «Формат даты/времени именно
+  // здесь») falls back to the site-wide setting when not set.
+  const effectiveTimeFormat = typeof row.style?.timeFormat === 'string' && row.style.timeFormat ? (row.style.timeFormat as TimeFormatId) : timeFormat;
   const decoration = Array.isArray(row.style?.decoration) ? (row.style?.decoration as string[]) : null;
   const gifUrl = typeof row.style?.gifUrl === 'string' ? (row.style.gifUrl as string) : null;
   const fontOverride = typeof row.style?.font === 'string' ? fontClassByOption[row.style.font as string] : null;
@@ -194,8 +208,9 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
       <div className="relative mx-auto w-full max-w-page px-[22px]">
         {isSpecial && <div className="mb-8 text-center"><div className="text-[12px] uppercase tracking-[3px] text-gold">{specialMomentLabel}</div><div className="mx-auto mt-4 h-px w-12 bg-gold/55" /></div>}
         <div className={`mb-4 flex items-center gap-2 text-[10px] uppercase tracking-[1.8px] ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-white/60' : 'text-burgundy/55'}`}>
-          <time>{wallClockDate(row.occurred_at, timeFormat)}</time>{timeFormat !== 'relative' && <><span>·</span><time>{wallClockTime(row.occurred_at, timeFormat)}</time></>}{label && <><span>·</span><span>{label}</span></>}
+          <time>{wallClockDate(row.occurred_at, effectiveTimeFormat)}</time>{effectiveTimeFormat !== 'relative' && <><span>·</span><time>{wallClockTime(row.occurred_at, effectiveTimeFormat)}</time></>}{label && <><span>·</span><span>{label}</span></>}
         </div>
+        {title && <h3 className={`mb-4 text-center font-serif text-2xl ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-burgundy'}`}>{title}</h3>}
         {media && <motion.div style={{ y: parallaxY }} className="mb-8">
           <Frame frame={frame}><ReaderMedia row={row} token={token} /></Frame>
           {photoReaction && <div className="mt-3 text-center font-script text-lg opacity-70">{photoReaction}</div>}

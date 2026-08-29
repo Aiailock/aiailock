@@ -158,11 +158,33 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   const [draggedId, setDraggedId] = useState<string | null>(null); const [dragOverId, setDragOverId] = useState<string | 'end' | null>(null); const [busyId, setBusyId] = useState<string | null>(null);
   const [insertGap, setInsertGap] = useState<{ prevId: string | null; nextId: string | null } | null>(null); const [insertKind, setInsertKind] = useState<InsertKind | null>(null);
   const [insertTitle, setInsertTitle] = useState(''); const [insertBody, setInsertBody] = useState(''); const [insertFile, setInsertFile] = useState<File | null>(null); const [insertBusy, setInsertBusy] = useState(false); const [insertError, setInsertError] = useState('');
+  // Воспоминания/особые моменты и скриншоты, вставленные через «+» (или
+  // импортированные), раньше показывались в единой истории как безликая
+  // плашка «Медиа/вложение привязано…» без текста и без формы редактирования —
+  // редактировать их можно было только уйдя на отдельную вкладку. Подгружаем
+  // содержимое обеих таблиц для текущей страницы, чтобы редактировать текст
+  // и оформление каждого элемента прямо здесь, как у обычных сообщений.
+  const [memMap, setMemMap] = useState<Map<string, MemoryRow>>(new Map());
+  const [shotMap, setShotMap] = useState<Map<string, ScreenshotRow>>(new Map());
+  const [memEditing, setMemEditing] = useState<string | null>(null); const [memForm, setMemForm] = useState({ title: '', body: '' });
+  const [shotEditing, setShotEditing] = useState<string | null>(null); const [shotForm, setShotForm] = useState({ title: '', description: '', caption: '' });
 
   // Сортировка по возрастанию (старое → новое), как в самой читалке — так
   // порядок карточек в админке совпадает с тем, что увидит читатель, и
   // перетаскивание/вставка «между двумя» интуитивно понятны.
-  const load = useCallback(async () => { const [{ data: elements }, { data: msgs }] = await Promise.all([supabase.from('timeline_elements').select('id,type,occurred_at,message_id,media_id,memory_id,screenshot_id,style,mood,importance,is_published').order('occurred_at', { ascending: true }).range(page * pageSize, page * pageSize + pageSize - 1), supabase.from('messages').select('id,sent_at,sender_name,original_text,display_text').eq('is_system_message', false).order('sent_at', { ascending: false }).limit(1200)]); setRows((elements ?? []) as TimelineRow[]); setMessages((msgs ?? []) as MessageRow[]); }, [page]);
+  const load = useCallback(async () => {
+    const [{ data: elements }, { data: msgs }] = await Promise.all([supabase.from('timeline_elements').select('id,type,occurred_at,message_id,media_id,memory_id,screenshot_id,style,mood,importance,is_published').order('occurred_at', { ascending: true }).range(page * pageSize, page * pageSize + pageSize - 1), supabase.from('messages').select('id,sent_at,sender_name,original_text,display_text').eq('is_system_message', false).order('sent_at', { ascending: false }).limit(1200)]);
+    const els = (elements ?? []) as TimelineRow[];
+    setRows(els); setMessages((msgs ?? []) as MessageRow[]);
+    const memIds = els.map((r) => r.memory_id).filter((id): id is string => Boolean(id));
+    const shotIds = els.map((r) => r.screenshot_id).filter((id): id is string => Boolean(id));
+    const [{ data: mems }, { data: shots }] = await Promise.all([
+      memIds.length ? supabase.from('memories').select('id,title,body,occurred_at,importance,place_after_message_id,photo_storage_path,style,metadata').in('id', memIds) : Promise.resolve({ data: [] as MemoryRow[] }),
+      shotIds.length ? supabase.from('screenshots').select('id,storage_path,title,description,caption,occurred_at,animation,position,style').in('id', shotIds) : Promise.resolve({ data: [] as ScreenshotRow[] }),
+    ]);
+    setMemMap(new Map(((mems ?? []) as MemoryRow[]).map((m) => [m.id, m])));
+    setShotMap(new Map(((shots ?? []) as ScreenshotRow[]).map((s) => [s.id, s])));
+  }, [page]);
   useEffect(() => { void load(); }, [load, refreshKey]); const map = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   const q = filter.toLowerCase().trim();
   const visible = rows.filter((r) => { const m = r.message_id ? map.get(r.message_id) : null; return !q || r.type.includes(q) || r.mood?.includes(q) || m?.original_text?.toLowerCase().includes(q); });
@@ -171,8 +193,28 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   // это не гарантировано, поэтому оба режима на время фильтра выключены.
   const reorderable = q.length === 0;
 
-  async function saveStyle(id: string) { try { const { error } = await supabase.from('timeline_elements').update({ style: styleValue }).eq('id', id); if (error) throw error; setEditing(null); await load(); } catch (e) { window.alert(e instanceof Error ? e.message : 'Не удалось сохранить стиль.'); } }
+  // Стиль хранится в двух местах: у сообщений/медиа — прямо в
+  // timeline_elements.style, а у воспоминаний/особых моментов/скриншотов —
+  // на исходной таблице (memories/screenshots), откуда триггер копирует его
+  // обратно в timeline_elements при каждом изменении. Раньше эта функция
+  // всегда писала в timeline_elements напрямую — для memory/screenshot это
+  // расходилось с исходной таблицей и следующее же сохранение в отдельной
+  // вкладке «Воспоминания»/«Скриншоты» затирало оформление обратно старым
+  // значением (именно это и давало «баги с рамками» в предпросмотре).
+  async function saveStyle(row: TimelineRow) {
+    try {
+      const table = row.memory_id ? 'memories' : row.screenshot_id ? 'screenshots' : null;
+      const sourceId = row.memory_id ?? row.screenshot_id;
+      const { error } = table && sourceId
+        ? await supabase.from(table).update({ style: styleValue }).eq('id', sourceId)
+        : await supabase.from('timeline_elements').update({ style: styleValue }).eq('id', row.id);
+      if (error) throw error;
+      setEditing(null); await load();
+    } catch (e) { window.alert(e instanceof Error ? e.message : 'Не удалось сохранить стиль.'); }
+  }
   async function saveText(id: string) { const { error } = await supabase.from('messages').update({ display_text: displayText || null }).eq('id', id); if (error) window.alert(error.message); else { setTextEditing(null); await load(); } }
+  async function saveMemory(row: TimelineRow) { if (!row.memory_id) return; const { error } = await supabase.from('memories').update({ title: memForm.title.trim() || null, body: memForm.body.trim() }).eq('id', row.memory_id); if (error) window.alert(error.message); else { setMemEditing(null); await load(); } }
+  async function saveShot(row: TimelineRow) { if (!row.screenshot_id) return; const { error } = await supabase.from('screenshots').update({ title: shotForm.title.trim() || null, description: shotForm.description.trim() || null, caption: shotForm.caption.trim() || null }).eq('id', row.screenshot_id); if (error) window.alert(error.message); else { setShotEditing(null); await load(); } }
   async function toggle(row: TimelineRow) { const { error } = await supabase.from('timeline_elements').update({ is_published: !row.is_published }).eq('id', row.id); if (error) window.alert(error.message); else await load(); }
 
   // Двигает элемент строго между `prev` и `next`. Для сообщений/медиа дата
@@ -272,10 +314,25 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
             className={`rounded-2xl border p-4 transition ${row.is_published ? 'border-black/7 bg-[#FBF8F5]' : 'border-dashed border-black/10 bg-black/[.02] opacity-55'} ${dragOverId === row.id ? 'ring-2 ring-burgundy/50' : ''} ${draggedId === row.id ? 'opacity-40' : ''} ${busyId === row.id ? 'opacity-60' : ''}`}
           >
             <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[1.4px] opacity-45">{draggableRow && <GripVertical size={13} className="cursor-grab opacity-40" />}<span>{row.type}</span><span>·</span><span>{dateTime(row.occurred_at)}</span>{row.mood && <span>· {row.mood}</span>}<span className="ml-auto">importance {row.importance}</span></div>
-            {m && <div className="mt-3"><div className="text-xs opacity-45">{m.sender_name}</div>{textEditing === m.id ? <div className="mt-2 space-y-2"><textarea value={displayText} onChange={(e) => setDisplayText(e.target.value)} className="min-h-28 w-full rounded-xl border p-3 text-sm" /><button onClick={() => void saveText(m.id)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить текст</button></div> : <p className="mt-1 whitespace-pre-wrap font-serif text-lg">{m.display_text ?? m.original_text ?? 'медиа без подписи'}</p>}</div>}
-            {(row.media_id || row.screenshot_id || row.memory_id) && <div className="mt-3 rounded-xl bg-white p-3 text-xs opacity-55">Медиа/вложение привязано к этому элементу</div>}
-            <div className="mt-4 flex flex-wrap gap-2"><button onClick={() => { setTextEditing(m?.id ?? null); setDisplayText(m?.display_text ?? m?.original_text ?? ''); }} disabled={!m} className="rounded-lg border px-3 py-2 text-xs disabled:opacity-30">Текст</button><button onClick={() => { setEditing(editing === row.id ? null : row.id); setStyleValue((row.style ?? {}) as StyleValue); }} className="rounded-lg border px-3 py-2 text-xs">{editing === row.id ? 'Скрыть оформление' : 'Оформление'}</button><button onClick={() => void toggle(row)} className="rounded-lg border px-3 py-2 text-xs">{row.is_published ? 'Скрыть' : 'Опубликовать'}</button></div>
-            {editing === row.id && <div className="mt-3"><StyleEditor value={styleValue} onChange={setStyleValue} hasMedia={hasMedia} /><button onClick={() => void saveStyle(row.id)} className="mt-2 rounded-lg bg-burgundy px-3 py-2 text-xs text-white"><Save size={13} className="mr-1 inline" />Сохранить оформление</button></div>}
+            {m && <div className="mt-3"><div className="text-xs opacity-45">{m.sender_name}</div>{textEditing === m.id ? <div className="mt-2 space-y-2"><textarea value={displayText} onChange={(e) => setDisplayText(e.target.value)} className="min-h-28 w-full rounded-xl border p-3 text-sm" /><div className="flex gap-2"><button onClick={() => void saveText(m.id)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить текст</button><button onClick={() => setTextEditing(null)} className="rounded-lg border px-3 py-2 text-xs">Отмена</button></div></div> : <p className="mt-1 whitespace-pre-wrap font-serif text-lg">{m.display_text ?? m.original_text ?? 'медиа без подписи'}</p>}</div>}
+            {row.memory_id && (() => { const mem = memMap.get(row.memory_id); if (!mem) return <div className="mt-3 rounded-xl bg-white p-3 text-xs opacity-55">Загрузка воспоминания…</div>; return <div className="mt-3">
+              <div className="text-xs opacity-45">{row.type === 'special' ? 'Особенный момент' : 'Воспоминание'}{mem.photo_storage_path && ' · с фото'}</div>
+              {memEditing === row.id
+                ? <div className="mt-2 space-y-2"><input value={memForm.title} onChange={(e) => setMemForm({ ...memForm, title: e.target.value })} placeholder="Название (необязательно)" className="w-full rounded-xl border p-3 text-sm" /><textarea value={memForm.body} onChange={(e) => setMemForm({ ...memForm, body: e.target.value })} className="min-h-28 w-full rounded-xl border p-3 text-sm" /><div className="flex gap-2"><button onClick={() => void saveMemory(row)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить текст</button><button onClick={() => setMemEditing(null)} className="rounded-lg border px-3 py-2 text-xs">Отмена</button></div></div>
+                : <>{mem.title && <div className="mt-1 font-serif text-lg text-burgundy">{mem.title}</div>}<p className="mt-1 whitespace-pre-wrap font-serif text-lg">{mem.body || 'Текст не заполнен'}</p></>}
+            </div>; })()}
+            {row.screenshot_id && (() => { const shot = shotMap.get(row.screenshot_id); if (!shot) return <div className="mt-3 rounded-xl bg-white p-3 text-xs opacity-55">Загрузка скриншота…</div>; return <div className="mt-3">
+              <div className="text-xs opacity-45">Скриншот · {shot.position} · {shot.animation}</div>
+              {shotEditing === row.id
+                ? <div className="mt-2 space-y-2"><input value={shotForm.title} onChange={(e) => setShotForm({ ...shotForm, title: e.target.value })} placeholder="Заголовок" className="w-full rounded-xl border p-3 text-sm" /><textarea value={shotForm.description} onChange={(e) => setShotForm({ ...shotForm, description: e.target.value })} placeholder="Описание" className="min-h-20 w-full rounded-xl border p-3 text-sm" /><input value={shotForm.caption} onChange={(e) => setShotForm({ ...shotForm, caption: e.target.value })} placeholder="Подпись" className="w-full rounded-xl border p-3 text-sm" /><div className="flex gap-2"><button onClick={() => void saveShot(row)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить текст</button><button onClick={() => setShotEditing(null)} className="rounded-lg border px-3 py-2 text-xs">Отмена</button></div></div>
+                : <>{shot.title && <div className="mt-1 font-serif text-lg text-burgundy">{shot.title}</div>}<p className="mt-1 whitespace-pre-wrap text-sm opacity-70">{shot.description || 'Без описания'}</p>{shot.caption && <p className="mt-1 whitespace-pre-wrap font-serif text-lg">{shot.caption}</p>}</>}
+            </div>; })()}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button onClick={() => { if (m) { setTextEditing(m.id); setDisplayText(m.display_text ?? m.original_text ?? ''); } else if (row.memory_id) { const mem = memMap.get(row.memory_id); setMemEditing(row.id); setMemForm({ title: mem?.title ?? '', body: mem?.body ?? '' }); } else if (row.screenshot_id) { const shot = shotMap.get(row.screenshot_id); setShotEditing(row.id); setShotForm({ title: shot?.title ?? '', description: shot?.description ?? '', caption: shot?.caption ?? '' }); } }} disabled={!m && !row.memory_id && !row.screenshot_id} className="rounded-lg border px-3 py-2 text-xs disabled:opacity-30">Текст</button>
+              <button onClick={() => { setEditing(editing === row.id ? null : row.id); setStyleValue((row.style ?? {}) as StyleValue); }} className="rounded-lg border px-3 py-2 text-xs">{editing === row.id ? 'Скрыть оформление' : 'Оформление'}</button>
+              <button onClick={() => void toggle(row)} className="rounded-lg border px-3 py-2 text-xs">{row.is_published ? 'Скрыть' : 'Опубликовать'}</button>
+            </div>
+            {editing === row.id && <div className="mt-3"><StyleEditor value={styleValue} onChange={setStyleValue} hasMedia={hasMedia} /><button onClick={() => void saveStyle(row)} className="mt-2 rounded-lg bg-burgundy px-3 py-2 text-xs text-white"><Save size={13} className="mr-1 inline" />Сохранить оформление</button></div>}
           </article>
           <InsertGap prevId={row.id} nextId={visible[i + 1]?.id ?? null} />
         </div>;

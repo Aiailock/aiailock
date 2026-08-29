@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Heart, LockKeyhole } from 'lucide-react';
 import TimelineStory from '@/components/reader/TimelineStory';
 import { fetchReaderSettings, requestReaderAccess } from '@/lib/readerApi';
+import { ReaderSettingsContext, readDisplaySettingsFromTheme, type ReaderDisplaySettings } from '@/lib/readerSettingsContext';
 
 const TOKEN_KEY = 'for-you-reader-token';
 
@@ -25,6 +26,7 @@ export default function ReaderPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [checkingPassword, setCheckingPassword] = useState(false);
+  const [displaySettings, setDisplaySettings] = useState<ReaderDisplaySettings>(() => readDisplaySettingsFromTheme(null));
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +45,7 @@ export default function ReaderPage() {
             if (typeof value === 'string') root.style.setProperty(variable, value);
           }
         }
+        setDisplaySettings(readDisplaySettingsFromTheme(settings.theme ?? null));
         const saved = localStorage.getItem(TOKEN_KEY);
         if (saved && tokenLooksFresh(saved)) {
           if (!cancelled) setToken(saved);
@@ -119,7 +122,7 @@ export default function ReaderPage() {
               <br />Но место для неё уже есть.</p>
           </div>
         </section>
-      ) : <TimelineStory token={token} />}
+      ) : <ReaderSettingsContext.Provider value={displaySettings}><TimelineStory token={token} /></ReaderSettingsContext.Provider>}
       <div className="px-6 pb-20 pt-8 text-center">
         <div className="mx-auto h-px w-16 bg-gold/45" />
         <p className="mt-4 font-script text-2xl text-burgundy/55">история продолжается</p>

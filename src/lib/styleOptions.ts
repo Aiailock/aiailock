@@ -26,6 +26,10 @@ export const FRAME_OPTIONS: StyleOption[] = [
   { id: 'postcard', label: 'Открытка с маркой' },
   { id: 'wax-seal', label: 'Сургучная печать' },
   { id: 'torn', label: 'Рваный край бумаги' },
+  { id: 'phone', label: 'Экран телефона', hint: 'Для скриншотов переписки' },
+  { id: 'locket', label: 'Медальон (круглая рамка)' },
+  { id: 'envelope', label: 'Конверт письма' },
+  { id: 'moonlit', label: 'Лунная ночь' },
 ];
 
 export const DECORATION_OPTIONS: StyleOption[] = [
@@ -36,6 +40,9 @@ export const DECORATION_OPTIONS: StyleOption[] = [
   { id: 'pixel-hearts', label: 'Пиксельные сердечки' },
   { id: 'fireflies', label: 'Светлячки' },
   { id: 'stardust', label: 'Звёздная пыль' },
+  { id: 'leaves', label: 'Осенние листья' },
+  { id: 'candles', label: 'Свечи', hint: 'Мягкое тёплое свечение' },
+  { id: 'custom-gif', label: 'Своя гифка', hint: 'Укажи ссылку на GIF ниже' },
 ];
 
 export const ZONE_OPTIONS: StyleOption[] = [
@@ -49,6 +56,8 @@ export const ZONE_OPTIONS: StyleOption[] = [
   { id: 'winter', label: 'Зима (голубой)' },
   { id: 'sepia', label: 'Сепия' },
   { id: 'rain', label: 'Дождливый серый' },
+  { id: 'forest', label: 'Лес / деревья' },
+  { id: 'dusk', label: 'Сумерки (фон темнеет)', hint: 'Плавно затемняется, когда попадает в кадр' },
 ];
 
 export const FONT_OPTIONS: StyleOption[] = [

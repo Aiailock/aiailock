@@ -1,6 +1,7 @@
 import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
 import { useRef } from 'react';
 import type { PublicTimelineRow } from '@/lib/readerApi';
+import { useReaderSettings, type TimeFormatId } from '@/lib/readerSettingsContext';
 import ReaderMedia from './ReaderMedia';
 import EffectsLayer from './EffectsLayer';
 
@@ -25,12 +26,42 @@ export const bgByZone: Record<string, string> = {
   winter: 'linear-gradient(180deg,#EAF3FB,#D3E6F5)',
   sepia: 'linear-gradient(180deg,#EFE3C9,#DCC9A0)',
   rain: 'linear-gradient(180deg,#DCE3EA,#B9C6D1)',
+  // New: soft forest green with tree silhouettes (see Botanical "trees" kind).
+  forest: 'linear-gradient(180deg,#EAF0E1,#C7D8B6)',
+  // New: a scene that visibly darkens as it enters view (see .dusk-veil in
+  // globals.css) — for goodbyes, endings of a chapter, or bittersweet notes.
+  dusk: 'linear-gradient(180deg,#3B3452,#1B1730)',
 };
 
-function wallClockDate(value: string, withYear = true) {
-  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', ...(withYear ? { year: 'numeric' } : {}), timeZone: 'UTC' }).format(new Date(value));
+// Date/time formatting is style-selectable from Admin → Настройки
+// ("Формат даты и времени", theme.timeFormat) — see readerSettingsContext.tsx.
+function pluralRu(n: number, forms: [string, string, string]) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return forms[0];
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1];
+  return forms[2];
 }
-function wallClockTime(value: string) {
+function relativeRu(value: string) {
+  const diffMs = Date.now() - new Date(value).getTime();
+  const days = Math.floor(diffMs / 86400000);
+  if (days <= 0) return 'сегодня';
+  if (days === 1) return 'вчера';
+  if (days < 30) return `${days} ${pluralRu(days, ['день', 'дня', 'дней'])} назад`;
+  const months = Math.floor(days / 30.44);
+  if (months < 12) return `${months} ${pluralRu(months, ['месяц', 'месяца', 'месяцев'])} назад`;
+  const years = Math.floor(days / 365.25);
+  return `${years} ${pluralRu(years, ['год', 'года', 'лет'])} назад`;
+}
+function wallClockDate(value: string, format: TimeFormatId = 'default', withYear = true) {
+  const date = new Date(value);
+  if (format === 'short') return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', ...(withYear ? { year: 'numeric' } : {}), timeZone: 'UTC' }).format(date);
+  if (format === 'relative') return relativeRu(value);
+  if (format === 'weekday') return new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', ...(withYear ? { year: 'numeric' } : {}), timeZone: 'UTC' }).format(date);
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', ...(withYear ? { year: 'numeric' } : {}), timeZone: 'UTC' }).format(date);
+}
+function wallClockTime(value: string, format: TimeFormatId = 'default') {
+  if (format === '12h') return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'UTC' }).format(new Date(value));
   return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }).format(new Date(value));
 }
 function year(value: string) { return Number(new Intl.DateTimeFormat('en', { year: 'numeric', timeZone: 'UTC' }).format(new Date(value))); }
@@ -82,6 +113,17 @@ export function Frame({ frame, children }: { frame: string; children: React.Reac
     case 'postcard': return <div className={`${common} max-w-[310px] bg-[#F6EFE0] p-3 shadow-lg`}><div aria-hidden className="absolute right-3 top-3 h-10 w-10 rotate-6 rounded-sm border border-burgundy/30" /><div aria-hidden className="absolute right-4 top-4 h-8 w-8 rotate-6 rounded-sm bg-burgundy/10" />{children}</div>;
     case 'wax-seal': return <div className={`${common} max-w-[290px] rounded-[10px] bg-white p-3 shadow-lg`}><div aria-hidden className="absolute -top-3 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full bg-burgundy text-xs text-gold shadow-md">♡</div>{children}</div>;
     case 'torn': return <div className={`${common} max-w-[300px] bg-white p-3 shadow-lg`} style={{ clipPath: 'polygon(0% 2%,4% 0%,10% 3%,18% 1%,26% 3%,34% 0%,42% 2%,50% 0%,58% 2%,66% 0%,74% 3%,82% 1%,90% 3%,96% 0%,100% 2%,100% 98%,94% 100%,86% 98%,78% 100%,70% 98%,62% 100%,54% 98%,46% 100%,38% 98%,30% 100%,22% 98%,14% 100%,6% 98%,0% 100%)' }}>{children}</div>;
+    // BUGFIX: Admin → Скриншоты defaulted every new screenshot's style to
+    // `{ frame: 'phone' }`, but 'phone' had no case here — it silently fell
+    // through to `default` (plain white card), which is why screenshot
+    // frames looked like they "didn't work". This adds the real phone
+    // mockup: rounded bezel + top notch, so a chat screenshot actually
+    // reads like a phone screen.
+    case 'phone': return <div className={`${common} max-w-[280px] rounded-[34px] border-[6px] border-[#1c1c1e] bg-[#1c1c1e] p-1.5 shadow-2xl`}><div aria-hidden className="absolute left-1/2 top-1.5 z-10 h-4 w-24 -translate-x-1/2 rounded-full bg-[#1c1c1e]" /><div className="overflow-hidden rounded-[26px]">{children}</div></div>;
+    // --- more romantic frame ideas ---
+    case 'locket': return <div className={`${common} max-w-[270px] rounded-full border-[3px] border-gold bg-white p-4 shadow-2xl`}><div className="overflow-hidden rounded-full">{children}</div></div>;
+    case 'envelope': return <div className={`${common} max-w-[300px] bg-[#F6EFE0] p-3 pt-8 shadow-lg`}><div aria-hidden className="absolute left-0 top-0 h-8 w-full" style={{ clipPath: 'polygon(0 0,50% 60%,100% 0)', background: 'linear-gradient(180deg,#EFE0C6,#F6EFE0)' }} /><div aria-hidden className="absolute left-1/2 top-3 -translate-x-1/2 text-burgundy/50 text-sm">✉</div>{children}</div>;
+    case 'moonlit': return <div className={`${common} max-w-[300px] rounded-[20px] bg-gradient-to-br from-[#3B3452] to-[#1B1730] p-3 shadow-2xl`}><div aria-hidden className="absolute right-4 top-4 h-5 w-5 rounded-full bg-[#EDE6F5]/80 shadow-[0_0_16px_4px_rgba(237,230,245,0.5)]" />{children}</div>;
     default: return <div className={`${common} max-w-[300px] rounded-[18px] bg-white/55 p-2 shadow-lg`}>{children}</div>;
   }
 }
@@ -94,12 +136,26 @@ function Botanical({ kind }: { kind: string }) {
   </svg>;
 }
 
+// Forest / trees decoration for the new 'forest' zone: a soft treeline
+// silhouette sitting along the bottom edge of the scene.
+function Treeline() {
+  return <svg aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-28 w-full opacity-25" viewBox="0 0 400 100" preserveAspectRatio="none" fill="none">
+    <g fill="currentColor">
+      <path d="M40 100V60l-14 14 14-30-12 6 12-26 12 26-12-6 14 30-14-14v40Z" />
+      <path d="M140 100V52l-18 18 18-38-15 8 15-33 15 33-15-8 18 38-18-18v48Z" />
+      <path d="M250 100V58l-15 15 15-32-12 6 12-28 12 28-12-6 15 32-15-15v42Z" />
+      <path d="M350 100V64l-13 13 13-28-10 5 10-24 10 24-10-5 13 28-13-13v36Z" />
+    </g>
+  </svg>;
+}
+
 function MotionWrap({ children, className, reduced }: { children: React.ReactNode; className?: string; reduced: boolean | null }) {
   return <motion.div className={className} initial={reduced ? undefined : { opacity: 0, y: 24 }} whileInView={reduced ? undefined : { opacity: 1, y: 0 }} viewport={{ once: true, margin: '-8% 0px' }} transition={{ duration: 0.95, ease: 'easeOut' }}>{children}</motion.div>;
 }
 
 export default function StoryElement({ row, token }: { row: PublicTimelineRow; token: string }) {
   const reducedMotion = useReducedMotion();
+  const { specialMomentLabel, timeFormat } = useReaderSettings();
   const zone = zoneOf(row);
   const ref = useRef<HTMLElement | null>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start end', 'end start'] });
@@ -118,6 +174,7 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
   const media = Boolean(row.media_id || row.screenshot_id || row.memory_photo_storage_path);
   const isSpecial = row.type === 'special' || row.metadata?.kind === 'special';
   const decoration = Array.isArray(row.style?.decoration) ? (row.style?.decoration as string[]) : null;
+  const gifUrl = typeof row.style?.gifUrl === 'string' ? (row.style.gifUrl as string) : null;
   const fontOverride = typeof row.style?.font === 'string' ? fontClassByOption[row.style.font as string] : null;
   // A message becomes a full "letter" (no truncation, generous paragraph
   // spacing) once it's long enough that a single flowing line would feel
@@ -131,18 +188,20 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
 
   const content = (
     <article ref={ref} style={{ background: bgByZone[zone] ?? bgByZone.default }} className="relative overflow-hidden py-8 transition-[background] duration-[1800ms]">
-      {decoration && <EffectsLayer decorations={decoration} seed={row.sort_tiebreak + row.occurred_at.length} />}
+      {zone === 'forest' && <Treeline />}
+      {zone === 'dusk' && <div className="dusk-veil" />}
+      {decoration && <EffectsLayer decorations={decoration} seed={row.sort_tiebreak + row.occurred_at.length} gifUrl={gifUrl} />}
       <div className="relative mx-auto w-full max-w-page px-[22px]">
-        {isSpecial && <div className="mb-8 text-center"><div className="text-[12px] uppercase tracking-[3px] text-gold">особенный момент</div><div className="mx-auto mt-4 h-px w-12 bg-gold/55" /></div>}
-        <div className={`mb-4 flex items-center gap-2 text-[10px] uppercase tracking-[1.8px] ${zone === 'night' || zone === 'burgundy' ? 'text-white/60' : 'text-burgundy/55'}`}>
-          <time>{wallClockDate(row.occurred_at)}</time><span>·</span><time>{wallClockTime(row.occurred_at)}</time>{label && <><span>·</span><span>{label}</span></>}
+        {isSpecial && <div className="mb-8 text-center"><div className="text-[12px] uppercase tracking-[3px] text-gold">{specialMomentLabel}</div><div className="mx-auto mt-4 h-px w-12 bg-gold/55" /></div>}
+        <div className={`mb-4 flex items-center gap-2 text-[10px] uppercase tracking-[1.8px] ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-white/60' : 'text-burgundy/55'}`}>
+          <time>{wallClockDate(row.occurred_at, timeFormat)}</time>{timeFormat !== 'relative' && <><span>·</span><time>{wallClockTime(row.occurred_at, timeFormat)}</time></>}{label && <><span>·</span><span>{label}</span></>}
         </div>
         {media && <motion.div style={{ y: parallaxY }} className="mb-8">
           <Frame frame={frame}><ReaderMedia row={row} token={token} /></Frame>
           {photoReaction && <div className="mt-3 text-center font-script text-lg opacity-70">{photoReaction}</div>}
         </motion.div>}
         {text && (isLongLetter ? (
-          <div className={`mx-auto max-w-[380px] space-y-5 ${zone === 'night' || zone === 'burgundy' ? 'text-[#F4EAF0]' : 'text-ink'}`}>
+          <div className={`mx-auto max-w-[380px] space-y-5 ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-ink'}`}>
             <div className="text-center text-[11px] uppercase tracking-[2px] opacity-45">без ограничения</div>
             {text.split(/\n{2,}|\n/).filter(Boolean).map((para, i) => (
               <p key={i} className={`whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[21px] leading-[1.75]`}>{para}</p>
@@ -150,7 +209,7 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
           </div>
         ) : (
           <div className={isSpecial ? 'mx-auto max-w-[390px] text-center' : ''}>
-            <p className={`whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${zone === 'night' || zone === 'burgundy' ? 'text-[#F4EAF0]' : 'text-ink'} ${isSpecial ? 'text-[27px] italic text-burgundy' : ''}`}>{text}</p>
+            <p className={`whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-ink'} ${isSpecial ? 'text-[27px] italic text-burgundy' : ''}`}>{text}</p>
             {row.display_text && row.original_text && row.display_text !== row.original_text && <details className="mt-5 text-[11px] opacity-45"><summary className="cursor-pointer">оригинал</summary><p className="mt-2 whitespace-pre-wrap font-sans">{row.original_text}</p></details>}
             {textReaction && <div className="mt-4 text-sm opacity-50">{textReaction}</div>}
             {isSpecial && <div className="mt-5 text-lg text-gold/70">♡</div>}

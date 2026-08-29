@@ -9,6 +9,7 @@ export interface StyleValue {
   zone?: string;
   decoration?: string[];
   font?: string;
+  gifUrl?: string;
   [key: string]: unknown;
 }
 
@@ -28,6 +29,7 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
   const zone = value.zone ?? 'default';
   const font = value.font ?? '';
   const decoration = value.decoration ?? [];
+  const gifUrl = value.gifUrl ?? '';
 
   function patch(next: Partial<StyleValue>) {
     const merged = { ...value, ...next };
@@ -45,7 +47,7 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
   }
 
   const previewBg = bgByZone[zone] ?? bgByZone.default;
-  const isDark = zone === 'night' || zone === 'burgundy' || zone === 'pixel';
+  const isDark = zone === 'night' || zone === 'burgundy' || zone === 'pixel' || zone === 'dusk';
 
   return (
     <div className="rounded-2xl border border-black/10 bg-[#FBF8F5] p-4">
@@ -81,12 +83,19 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
             ))}
           </div>
         </div>
+        {decoration.includes('custom-gif') && (
+          <label className="block text-xs sm:col-span-2">
+            <span className="opacity-60">Ссылка на свою гифку (URL)</span>
+            <input value={gifUrl} onChange={(e) => patch({ gifUrl: e.target.value || undefined })} placeholder="https://…/moment.gif" className="mt-1 w-full rounded-lg border p-2 text-sm" />
+            <span className="mt-1 block opacity-45">Загрузи GIF в любое бесплатное хранилище картинок (или как фото в «Медиа») и вставь сюда прямую ссылку — она будет плавно летать по сцене.</span>
+          </label>
+        )}
       </div>
 
       {/* Живое превью — тот же Frame/EffectsLayer, что и в самой книге. */}
       <div className="relative mt-5 overflow-hidden rounded-2xl" style={{ background: previewBg }}>
         <div className="relative flex min-h-[200px] items-center justify-center p-6">
-          <EffectsLayer decorations={decoration} seed={7} />
+          <EffectsLayer decorations={decoration} seed={7} gifUrl={gifUrl || undefined} />
           {hasMedia ? (
             <Frame frame={frame}>
               <div className="flex aspect-[4/5] w-full items-center justify-center bg-gradient-to-br from-blush to-peach p-4 text-center font-serif text-sm italic text-white">

@@ -8,9 +8,11 @@ import { useReducedMotion } from 'framer-motion';
 // each zone hard-coding its own particle script the way the prototype did.
 //
 // Supported decoration ids: 'petals' | 'confetti' | 'snow' | 'rain' |
-// 'pixel-hearts' | 'fireflies' | 'stardust'
+// 'pixel-hearts' | 'fireflies' | 'stardust' | 'leaves' | 'candles' | 'custom-gif'
 
-export type DecorationKind = 'petals' | 'confetti' | 'snow' | 'rain' | 'pixel-hearts' | 'fireflies' | 'stardust';
+export type DecorationKind = 'petals' | 'confetti' | 'snow' | 'rain' | 'pixel-hearts' | 'fireflies' | 'stardust' | 'leaves' | 'candles' | 'custom-gif';
+
+const LEAF_GLYPHS = ['🍁', '🍂', '🍃'];
 
 function seededRandoms(count: number, seed: number) {
   // Deterministic pseudo-random so re-renders (and SSR-less hydration) don't
@@ -25,7 +27,7 @@ function seededRandoms(count: number, seed: number) {
 
 const CONFETTI_COLORS = ['#E85A80', '#F4C89A', '#7CF7C4', '#C8BFE7', '#FFD86B'];
 
-export default function EffectsLayer({ decorations, seed = 1 }: { decorations?: string[] | null; seed?: number }) {
+export default function EffectsLayer({ decorations, seed = 1, gifUrl }: { decorations?: string[] | null; seed?: number; gifUrl?: string | null }) {
   const reduced = useReducedMotion();
   const list = (decorations ?? []).filter(Boolean) as DecorationKind[];
 
@@ -36,6 +38,9 @@ export default function EffectsLayer({ decorations, seed = 1 }: { decorations?: 
   const heartRands = useMemo(() => seededRandoms(9, seed + 5), [seed]);
   const fireflyRands = useMemo(() => seededRandoms(14, seed + 6), [seed]);
   const stardustRands = useMemo(() => seededRandoms(18, seed + 7), [seed]);
+  const leafRands = useMemo(() => seededRandoms(8, seed + 8), [seed]);
+  const candleRands = useMemo(() => seededRandoms(3, seed + 9), [seed]);
+  const gifRands = useMemo(() => seededRandoms(3, seed + 10), [seed]);
 
   if (reduced || list.length === 0) return null;
 
@@ -62,6 +67,15 @@ export default function EffectsLayer({ decorations, seed = 1 }: { decorations?: 
       ))}
       {list.includes('stardust') && stardustRands.map((r, i) => (
         <span key={`d${i}`} className="stardust" style={{ left: `${r * 100}%`, top: `${(r * 90) + 5}%`, animationDuration: `${4 + r * 3}s`, animationDelay: `${r * 3}s` }} />
+      ))}
+      {list.includes('leaves') && leafRands.map((r, i) => (
+        <span key={`l${i}`} className="leaf" style={{ left: `${r * 100}%`, animationDuration: `${11 + r * 9}s`, animationDelay: `${r * 9}s` }}>{LEAF_GLYPHS[i % LEAF_GLYPHS.length]}</span>
+      ))}
+      {list.includes('candles') && candleRands.map((r, i) => (
+        <span key={`cn${i}`} className="candle-glow" style={{ left: `${18 + r * 64}%`, animationDuration: `${2.2 + r * 1.4}s`, animationDelay: `${r * 1.5}s` }} />
+      ))}
+      {list.includes('custom-gif') && gifUrl && gifRands.map((r, i) => (
+        <img key={`g${i}`} src={gifUrl} alt="" aria-hidden="true" className="gif-sprite" style={{ left: `${10 + r * 70}%`, top: `${10 + r * 60}%`, animationDuration: `${5 + r * 4}s`, animationDelay: `${r * 3}s` }} />
       ))}
     </div>
   );

@@ -95,8 +95,44 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
   }
-  async function submit(e: FormEvent) { e.preventDefault(); if (!file) return; if (file.size > 200 * 1024 * 1024) { setReport({ error: 'ZIP слишком большой. Ограничение: 200 MB.' }); return; } setBusy(true); setReport(null); const form = new FormData(); form.append('file', file); if (needsStart && startDate) form.append('reader_starts_at', `${startDate}T00:00:00.000Z`); const { data, error } = await supabase.functions.invoke('import-zip', { body: form }); if (error || data?.error) { setBusy(false); setReport({ error: error?.message ?? data.error }); return; } const importId = data.importId as string; await load(); const finalReport = await pollImport(importId); setBusy(false); setReport(finalReport); onDone(); await load(); }
-  const steps = ['ZIP загружается на сервер', 'Архив распаковывается и анализируется', 'Сообщения и media сопоставляются', 'Дубликаты отбрасываются', 'Данные сохраняются в Supabase', 'Обработка продолжается в фоне — для больших архивов может занять несколько минут'];
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!file) return;
+    if (file.size > 200 * 1024 * 1024) { setReport({ error: 'ZIP слишком большой. Ограничение: 200 MB.' }); return; }
+    setBusy(true); setReport(null);
+    try {
+      // Upload straight to the private `originals` bucket (admin already has
+      // full RLS access to it — see 0003_storage.sql) instead of streaming
+      // the whole archive through the import-zip function's request body.
+      // For large exports that request-body buffering was enough to exceed
+      // the Edge Function's memory limit and get the worker killed mid-
+      // request (a bare 502, before the function could even respond).
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `imports/pending/${crypto.randomUUID()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('originals')
+        .upload(storagePath, file, { contentType: 'application/zip', upsert: true });
+      if (uploadError) throw uploadError;
+
+      const { data, error } = await supabase.functions.invoke('import-zip', {
+        body: {
+          storagePath,
+          fileName: file.name,
+          fileSize: file.size,
+          ...(needsStart && startDate ? { reader_starts_at: `${startDate}T00:00:00.000Z` } : {}),
+        },
+      });
+      if (error || data?.error) { setBusy(false); setReport({ error: error?.message ?? data.error }); return; }
+      const importId = data.importId as string;
+      await load();
+      const finalReport = await pollImport(importId);
+      setBusy(false); setReport(finalReport); onDone(); await load();
+    } catch (err) {
+      setBusy(false);
+      setReport({ error: err instanceof Error ? err.message : 'Не удалось загрузить архив.' });
+    }
+  }
+  const steps = ['ZIP загружается напрямую в Storage', 'Архив распаковывается и анализируется', 'Сообщения и media сопоставляются', 'Дубликаты отбрасываются', 'Данные сохраняются в Supabase', 'Обработка продолжается в фоне — для больших архивов может занять несколько минут'];
   return <section className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]"><div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm"><div className="flex items-center gap-3"><FileArchive className="text-burgundy" /><div><h1 className="font-serif text-3xl text-burgundy">Импорт истории</h1><p className="text-xs opacity-55">Полный экспорт с медиа можно загружать снова и снова — существующие сообщения не дублируются.</p></div></div><form onSubmit={(e) => void submit(e)} className="mt-7 space-y-4"><label className="block text-sm">ZIP-архив<input type="file" accept=".zip,application/zip" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="mt-2 block w-full rounded-xl border border-dashed border-burgundy/20 bg-[#FBF3EE] p-3 text-sm" required /></label>{file && <div className="rounded-xl bg-black/[.03] p-3 text-xs">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB</div>}{needsStart && <label className="block text-sm">Дата начала истории<input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required className="mt-2 block w-full rounded-xl border border-black/10 p-3" /></label>}<button disabled={!file || busy || (needsStart && !startDate)} className="w-full rounded-xl bg-burgundy px-5 py-3 text-sm text-white disabled:opacity-40">{busy ? 'Обрабатываю архив…' : 'Загрузить и собрать историю'}</button></form>{busy && <div className="mt-6 space-y-2 rounded-2xl bg-[#F6EFE0] p-4">{steps.map((step, i) => <div key={step} className={`flex items-center gap-3 text-sm ${i === steps.length - 1 ? 'opacity-35' : ''}`}><span className={`h-2 w-2 rounded-full ${i < steps.length - 1 ? 'animate-pulse bg-burgundy' : 'bg-black/10'}`} />{step}{i === 0 && <span className="ml-auto text-xs opacity-45">сервер</span>}</div>)}</div>}{report && <pre className="mt-5 max-h-80 overflow-auto rounded-xl bg-[#211820] p-4 text-xs text-white">{JSON.stringify(report, null, 2)}</pre>}</div><div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm"><h2 className="font-serif text-2xl text-burgundy">История импортов</h2><div className="mt-4 space-y-3">{imports.map((item) => <div key={item.id} className="rounded-xl border border-black/5 p-3"><div className="flex justify-between gap-2 text-xs"><span className="truncate">{item.file_name}</span><span>{item.status}</span></div><div className="mt-2 grid grid-cols-2 gap-1 text-[11px] opacity-55"><span>{dateTime(item.started_at)}</span><span>+{item.messages_new} новых</span><span>{item.messages_duplicate} дублей</span><span>медиа {item.media_matched}/{item.media_found}</span></div>{item.media_missing > 0 && <div className="mt-2 text-xs text-amber-700">Не найдено media: {item.media_missing}</div>}{item.error_message && <div className="mt-2 text-xs text-red-700">{item.error_message}</div>}{item.log?.length ? <details className="mt-3"><summary className="cursor-pointer text-xs opacity-55">Лог обработки</summary><div className="mt-2 space-y-1 border-l border-black/10 pl-3">{item.log.map((entry, index) => <div key={`${item.id}-${index}`} className="text-[11px]"><span className="font-medium">{entry.step}</span> · {entry.message}</div>)}</div></details> : null}</div>)}</div></div></section>;
 }
 

@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --cream: #fbf3ee;
+  --blush: #f2c9c2;
+  --peach: #f0b79a;
+  --lavender: #c8bfe7;
+  --burgundy: #4a1b2f;
+  --gold: #c9a063;
+  --ink: #3a2e30;
+  --paper: #f6efe0;
+}
+
+html,
+body {
+  width: 100%;
+  overflow-x: hidden;
+  background: var(--cream);
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  color: var(--ink);
+  font-weight: 300;
+  position: relative;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .petal,
+  .pixel-heart,
+  .gif-sprite,
+  .confetti {
+    display: none;
+  }
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Scroll-reveal primitive used across reader components (stage: reader UI). */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 1.4s ease,
+    transform 1.4s ease;
+}
+.reveal.in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Final reader polish: keep the book narrow on desktop while preserving a fluid mobile canvas. */
+.reader-book { width: min(100%, 430px); margin-inline: auto; }
+.reader-silence { min-height: 16vh; }
+.story-media img, .story-media video { max-width: 100%; height: auto; }
+button, a, input, textarea, select, summary { -webkit-tap-highlight-color: transparent; }
+@media (max-width: 430px) {
+  body { min-width: 320px; }
+}

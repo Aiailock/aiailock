@@ -2,6 +2,13 @@ import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion
 import { useRef } from 'react';
 import type { PublicTimelineRow } from '@/lib/readerApi';
 import ReaderMedia from './ReaderMedia';
+import EffectsLayer from './EffectsLayer';
+
+// A message renders as a full "letter" layout (bigger serif type, generous
+// paragraph spacing, no visual truncation) once it crosses this length —
+// ported from reader-prototype.html's `.long-letter` treatment (see the
+// "ОЧЕНЬ ДЛИННЫЙ ТЕКСТ" zone in the prototype).
+const LONG_LETTER_THRESHOLD = 420;
 
 const moodLabel: Record<string, string> = {
   romantic: 'любовь', sad: 'тихая грусть', funny: 'улыбка', deep: 'важная мысль', night: 'ночь', memory: 'память', important: 'важное', hopeful: 'надежда', normal: '', neutral: '',
@@ -38,6 +45,15 @@ function zoneOf(row: PublicTimelineRow) {
   return 'default';
 }
 
+// Corner ornament used by the `hearts` frame below — four small hearts, one
+// per corner, instead of a full botanical illustration.
+function HeartCorners() {
+  const positions = ['-left-2 -top-2', '-right-2 -top-2 rotate-90', '-left-2 -bottom-2 -rotate-90', '-right-2 -bottom-2 rotate-180'];
+  return <>{positions.map((pos, i) => (
+    <span key={i} aria-hidden className={`absolute ${pos} text-lg text-burgundy/60`}>❤</span>
+  ))}</>;
+}
+
 function Frame({ frame, children }: { frame: string; children: React.ReactNode }) {
   const common = 'relative mx-auto w-full overflow-visible transition-transform duration-700';
   switch (frame) {
@@ -56,6 +72,12 @@ function Frame({ frame, children }: { frame: string; children: React.ReactNode }
     case 'neon': return <div className={`${common} max-w-[290px] bg-gradient-to-br from-[#FF6FB5] via-[#7CF7C4] to-[#7BB8FF] p-[2px] shadow-2xl`}><div className="bg-[#141420] p-2">{children}</div></div>;
     case 'pixel': return <div className={`${common} max-w-[260px] border-[4px] border-[#7CF7C4] bg-[#0D1321] p-2 shadow-[0_0_0_6px_#1B2340,0_0_0_10px_#FF6FB5]`}>{children}</div>;
     case 'minimal': return <div className={`${common} max-w-[300px] bg-white p-2 shadow-md`}>{children}</div>;
+    // --- new frame ideas, added on top of the approved reader-prototype set ---
+    case 'hearts': return <div className={`${common} max-w-[290px] rounded-[16px] border border-blush/60 bg-white p-3 shadow-lg`}><HeartCorners />{children}</div>;
+    case 'garland': return <div className={`${common} max-w-[300px] rounded-[14px] border border-gold/30 bg-white p-4 pt-6 shadow-lg`}><div aria-hidden className="absolute left-2 right-2 top-1 flex justify-between text-[10px] text-gold/70">{Array.from({ length: 9 }).map((_, i) => <span key={i}>✦</span>)}</div>{children}</div>;
+    case 'postcard': return <div className={`${common} max-w-[310px] bg-[#F6EFE0] p-3 shadow-lg`}><div aria-hidden className="absolute right-3 top-3 h-10 w-10 rotate-6 rounded-sm border border-burgundy/30" /><div aria-hidden className="absolute right-4 top-4 h-8 w-8 rotate-6 rounded-sm bg-burgundy/10" />{children}</div>;
+    case 'wax-seal': return <div className={`${common} max-w-[290px] rounded-[10px] bg-white p-3 shadow-lg`}><div aria-hidden className="absolute -top-3 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full bg-burgundy text-xs text-gold shadow-md">♡</div>{children}</div>;
+    case 'torn': return <div className={`${common} max-w-[300px] bg-white p-3 shadow-lg`} style={{ clipPath: 'polygon(0% 2%,4% 0%,10% 3%,18% 1%,26% 3%,34% 0%,42% 2%,50% 0%,58% 2%,66% 0%,74% 3%,82% 1%,90% 3%,96% 0%,100% 2%,100% 98%,94% 100%,86% 98%,78% 100%,70% 98%,62% 100%,54% 98%,46% 100%,38% 98%,30% 100%,22% 98%,14% 100%,6% 98%,0% 100%)' }}>{children}</div>;
     default: return <div className={`${common} max-w-[300px] rounded-[18px] bg-white/55 p-2 shadow-lg`}>{children}</div>;
   }
 }
@@ -91,21 +113,44 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
   const label = row.mood ? moodLabel[row.mood] : '';
   const media = Boolean(row.media_id || row.screenshot_id || row.memory_photo_storage_path);
   const isSpecial = row.type === 'special' || row.metadata?.kind === 'special';
+  const decoration = Array.isArray(row.style?.decoration) ? (row.style?.decoration as string[]) : null;
+  // A message becomes a full "letter" (no truncation, generous paragraph
+  // spacing) once it's long enough that a single flowing line would feel
+  // cramped — matches the "ОЧЕНЬ ДЛИННЫЙ ТЕКСТ" treatment in the prototype.
+  const isLongLetter = row.type === 'message' && (text?.length ?? 0) > LONG_LETTER_THRESHOLD;
+  // Reaction text/emoji left on a photo/media element renders as a small
+  // caption directly under the frame, the way a handwritten note under a
+  // printed photo would — rather than at the bottom of the whole card.
+  const photoReaction = media ? (row.reaction_emoji ?? null) : null;
+  const textReaction = !media ? (row.reaction_emoji ?? null) : null;
 
   const content = (
     <article ref={ref} style={{ background: bgByZone[zone] ?? bgByZone.default }} className="relative overflow-hidden py-8 transition-[background] duration-[1800ms]">
-      <div className="mx-auto w-full max-w-page px-[22px]">
+      {decoration && <EffectsLayer decorations={decoration} seed={row.sort_tiebreak + row.occurred_at.length} />}
+      <div className="relative mx-auto w-full max-w-page px-[22px]">
         {isSpecial && <div className="mb-8 text-center"><div className="text-[12px] uppercase tracking-[3px] text-gold">особенный момент</div><div className="mx-auto mt-4 h-px w-12 bg-gold/55" /></div>}
         <div className={`mb-4 flex items-center gap-2 text-[10px] uppercase tracking-[1.8px] ${zone === 'night' || zone === 'burgundy' ? 'text-white/60' : 'text-burgundy/55'}`}>
           <time>{wallClockDate(row.occurred_at)}</time><span>·</span><time>{wallClockTime(row.occurred_at)}</time>{label && <><span>·</span><span>{label}</span></>}
         </div>
-        {media && <motion.div style={{ y: parallaxY }} className="mb-8"><Frame frame={frame}><ReaderMedia row={row} token={token} /></Frame></motion.div>}
-        {text && <div className={isSpecial ? 'mx-auto max-w-[390px] text-center' : ''}>
-          <p className={`whitespace-pre-wrap font-serif text-[23px] leading-[1.58] sm:text-[25px] ${zone === 'night' || zone === 'burgundy' ? 'text-[#F4EAF0]' : 'text-ink'} ${isSpecial ? 'text-[27px] italic text-burgundy' : ''}`}>{text}</p>
-          {row.display_text && row.original_text && row.display_text !== row.original_text && <details className="mt-5 text-[11px] opacity-45"><summary className="cursor-pointer">оригинал</summary><p className="mt-2 whitespace-pre-wrap font-sans">{row.original_text}</p></details>}
-          {row.reaction_emoji && <div className="mt-4 text-sm opacity-50">{row.reaction_emoji}</div>}
-          {isSpecial && <div className="mt-5 text-lg text-gold/70">♡</div>}
-        </div>}
+        {media && <motion.div style={{ y: parallaxY }} className="mb-8">
+          <Frame frame={frame}><ReaderMedia row={row} token={token} /></Frame>
+          {photoReaction && <div className="mt-3 text-center font-script text-lg opacity-70">{photoReaction}</div>}
+        </motion.div>}
+        {text && (isLongLetter ? (
+          <div className={`mx-auto max-w-[380px] space-y-5 ${zone === 'night' || zone === 'burgundy' ? 'text-[#F4EAF0]' : 'text-ink'}`}>
+            <div className="text-center text-[11px] uppercase tracking-[2px] opacity-45">без ограничения</div>
+            {text.split(/\n{2,}|\n/).filter(Boolean).map((para, i) => (
+              <p key={i} className="whitespace-pre-wrap font-serif text-[21px] leading-[1.75]">{para}</p>
+            ))}
+          </div>
+        ) : (
+          <div className={isSpecial ? 'mx-auto max-w-[390px] text-center' : ''}>
+            <p className={`whitespace-pre-wrap font-serif text-[23px] leading-[1.58] sm:text-[25px] ${zone === 'night' || zone === 'burgundy' ? 'text-[#F4EAF0]' : 'text-ink'} ${isSpecial ? 'text-[27px] italic text-burgundy' : ''}`}>{text}</p>
+            {row.display_text && row.original_text && row.display_text !== row.original_text && <details className="mt-5 text-[11px] opacity-45"><summary className="cursor-pointer">оригинал</summary><p className="mt-2 whitespace-pre-wrap font-sans">{row.original_text}</p></details>}
+            {textReaction && <div className="mt-4 text-sm opacity-50">{textReaction}</div>}
+            {isSpecial && <div className="mt-5 text-lg text-gold/70">♡</div>}
+          </div>
+        ))}
       </div>
     </article>
   );

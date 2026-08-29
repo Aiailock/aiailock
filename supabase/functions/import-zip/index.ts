@@ -2,7 +2,7 @@
 // import-zip — Stage 2 core: admin uploads a WhatsApp export ZIP, this
 // function unzips it, parses the chat text (server/parser), filters to the
 // reader's history window, deduplicates against already-imported messages
-// by fingerprint, saves new messages (+ media reference rows), advances the
+// by fingerprint, saves new messages (+ media reference rows),Ф advances the
 // import watermark, and returns a full report. Every step is written to the
 // `imports.log` column as it happens, so a failure partway through still
 // leaves a readable trail instead of a stuck "processing" row.

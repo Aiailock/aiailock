@@ -44,6 +44,11 @@
 
 // deno-lint-ignore-file no-explicit-any
 declare const Deno: { serve(handler: (req: Request) => Response | Promise<Response>): void };
+// Supabase Edge Runtime global used to keep a worker alive after the HTTP
+// response has already been sent, so long-running work (unzip + parse +
+// hundreds of Storage uploads for a large export) is not bound by the
+// platform's ~150s request wall-clock limit. See processImportInBackground().
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
 import { corsHeaders } from '../_shared/cors.ts';
 import { assertAdmin, serviceClient, HttpError } from '../_shared/db.ts';
@@ -157,38 +162,26 @@ async function insertMessagesResilient(
   return { inserted, errors };
 }
 
-Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
-
-  const db = serviceClient();
-  let importId: string | null = null;
-  const log: LogStep[] = [];
-
+/**
+ * Does all the heavy lifting (unzip, parse, dedup, save, media upload,
+ * thumbnails, watermark advance, chapter rebuild) for one import. Runs
+ * inside EdgeRuntime.waitUntil() *after* the HTTP response has already
+ * been sent back to the admin — so it is not bound by the platform's
+ * request wall-clock limit (150s Free / up to 400s Pro), only by the
+ * background-task limit, which is generous enough for large exports.
+ * Every outcome (success, partial success, failure) is written to the
+ * `imports` row; the admin UI polls that row instead of waiting on this
+ * HTTP call to resolve.
+ */
+async function processImport(
+  db: ReturnType<typeof serviceClient>,
+  importId: string,
+  file: File,
+  bytes: Uint8Array,
+  startDateRaw: FormDataEntryValue | null,
+  log: LogStep[],
+): Promise<void> {
   try {
-    await assertAdmin(req);
-
-    const form = await req.formData();
-    const file = form.get('file');
-    const startDateRaw = form.get('reader_starts_at');
-
-    if (!(file instanceof File)) {
-      throw new HttpError(400, 'Не передан файл архива (поле "file").');
-    }
-
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    log.push(logStep('received', 'ok', `Получен файл ${file.name} (${bytes.byteLength} байт).`));
-
-    const { data: importRow, error: importInsertError } = await db
-      .from('imports')
-      .insert({ file_name: file.name, file_size_bytes: bytes.byteLength, status: 'processing', log })
-      .select('id')
-      .single();
-    if (importInsertError || !importRow) {
-      throw new Error(`Не удалось создать запись импорта: ${importInsertError?.message}`);
-    }
-    importId = importRow.id;
-
     // Keep the raw archive so Stage 3 (media engine) or a future re-parse
     // doesn't require the admin to re-upload it.
     const originalPath = `imports/${importId}/${file.name}`;
@@ -468,8 +461,6 @@ Deno.serve(async (req: Request) => {
         ? 'completed_with_warnings'
         : 'completed';
 
-    log.push(logStep('done', 'ok', `Импорт завершён со статусом "${finalStatus}".`));
-
     await db
       .from('imports')
       .update({
@@ -489,35 +480,59 @@ Deno.serve(async (req: Request) => {
         log,
       })
       .eq('id', importId);
+  } catch (err) {
+    // A failure anywhere in background processing must still leave the
+    // `imports` row in a terminal, readable state — never stuck on
+    // "processing" forever with no explanation.
+    const message = err instanceof Error ? err.message : String(err);
+    log.push(logStep('error', 'error', message));
+    await db
+      .from('imports')
+      .update({ status: 'failed', finished_at: new Date().toISOString(), error_message: message, log })
+      .eq('id', importId);
+  }
+}
 
-    return json({
-      importId,
-      status: finalStatus,
-      messagesFound: filtered.length,
-      messagesNew: newMessages.length,
-      messagesDuplicate: filtered.length - newMessages.length,
-      mediaFound: mediaFoundMsgs.length,
-      mediaMatched: mediaMatchedMsgs.length,
-      mediaMissing: mediaMissingCount,
-      photosCount,
-      videosCount,
-      audioCount,
-      stickersCount,
-      parseWarnings: warnings,
-      log,
-    });
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+
+  const db = serviceClient();
+
+  try {
+    await assertAdmin(req);
+
+    const form = await req.formData();
+    const file = form.get('file');
+    const startDateRaw = form.get('reader_starts_at');
+
+    if (!(file instanceof File)) {
+      throw new HttpError(400, 'Не передан файл архива (поле "file").');
+    }
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const log: LogStep[] = [logStep('received', 'ok', `Получен файл ${file.name} (${bytes.byteLength} байт).`)];
+
+    const { data: importRow, error: importInsertError } = await db
+      .from('imports')
+      .insert({ file_name: file.name, file_size_bytes: bytes.byteLength, status: 'processing', log })
+      .select('id')
+      .single();
+    if (importInsertError || !importRow) {
+      throw new Error(`Не удалось создать запись импорта: ${importInsertError?.message}`);
+    }
+    const importId: string = importRow.id;
+
+    // Respond immediately — the admin UI polls the `imports` row for
+    // progress/completion instead of waiting on this HTTP call, which
+    // would otherwise be killed by the platform's request wall-clock
+    // limit on any sufficiently large export (many photos/videos).
+    EdgeRuntime.waitUntil(processImport(db, importId, file, bytes, startDateRaw, log));
+
+    return json({ importId, status: 'processing', async: true, log });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const status = err instanceof HttpError ? err.status : 500;
-    log.push(logStep('error', 'error', message));
-
-    if (importId) {
-      await db
-        .from('imports')
-        .update({ status: 'failed', finished_at: new Date().toISOString(), error_message: message, log })
-        .eq('id', importId);
-    }
-
-    return json({ error: message, importId, log }, status);
+    return json({ error: message }, status);
   }
 });

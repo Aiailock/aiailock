@@ -150,8 +150,45 @@ function midpointIso(prevIso: string | null, nextIso: string | null): string {
   return new Date().toISOString();
 }
 
-type InsertKind = 'special' | 'memory' | 'screenshot';
-const insertKindLabel: Record<InsertKind, string> = { special: 'Особый момент', memory: 'Воспоминание', screenshot: 'Скриншот' };
+type InsertKind = 'message' | 'special' | 'memory' | 'screenshot';
+const insertKindLabel: Record<InsertKind, string> = { message: 'Обычное сообщение', special: 'Особый момент', memory: 'Воспоминание', screenshot: 'Скриншот' };
+
+// Тонкая полоса-разделитель между двумя карточками истории: клик по «+»
+// открывает выбор типа вставки и мини-форму прямо на месте. Компонент живёт
+// на уровне модуля (а не объявлен внутри TimelinePanel), потому что при
+// объявлении внутри тела компонента React получает НОВУЮ функцию-компонент
+// на каждый ре-рендер родителя — а значит считает её другим типом элемента
+// и полностью размонтирует/монтирует заново DOM-узел поля ввода при любом
+// изменении состояния (например, после каждой набранной буквы). Именно
+// из-за этого поле теряло фокус и приходилось кликать в него заново на
+// каждую букву. Все нужные данные и колбэки приходят пропсами.
+interface InsertGapProps {
+  prevId: string | null; nextId: string | null; reorderable: boolean;
+  insertGap: { prevId: string | null; nextId: string | null } | null; insertKind: InsertKind | null;
+  insertTitle: string; insertBody: string; insertBusy: boolean; insertError: string;
+  onOpen: (prevId: string | null, nextId: string | null) => void; onClose: () => void; onPickKind: (kind: InsertKind) => void;
+  onTitleChange: (v: string) => void; onBodyChange: (v: string) => void; onFileChange: (f: File | null) => void; onSubmit: () => void;
+}
+function InsertGap({ prevId, nextId, reorderable, insertGap, insertKind, insertTitle, insertBody, insertBusy, insertError, onOpen, onClose, onPickKind, onTitleChange, onBodyChange, onFileChange, onSubmit }: InsertGapProps) {
+  if (!reorderable) return null;
+  const open = insertGap?.prevId === prevId && insertGap?.nextId === nextId;
+  if (!open) return <div className="group relative py-1"><div className="h-px bg-black/5" /><button type="button" onClick={() => onOpen(prevId, nextId)} title="Вставить сюда" className="absolute left-1/2 top-1/2 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white opacity-0 shadow-sm transition group-hover:opacity-100"><Plus size={12} /></button></div>;
+  const hasTitle = insertKind !== 'screenshot' && insertKind !== 'message';
+  const hasPhoto = insertKind !== 'screenshot' && insertKind !== 'message';
+  return <div className="my-2 rounded-2xl border border-dashed border-burgundy/25 bg-[#FBF3EE] p-3">
+    {!insertKind
+      ? <div className="flex flex-wrap items-center gap-2"><span className="text-xs opacity-55">Вставить сюда:</span>{(['message', 'special', 'memory', 'screenshot'] as InsertKind[]).map((k) => <button key={k} type="button" onClick={() => onPickKind(k)} className="rounded-lg border border-burgundy/20 bg-white px-3 py-1.5 text-xs hover:bg-burgundy hover:text-white">{insertKindLabel[k]}</button>)}<button type="button" onClick={onClose} className="ml-auto rounded-lg p-1.5 text-xs opacity-45 hover:opacity-80"><X size={14} /></button></div>
+      : <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs"><span className="opacity-55">{insertKindLabel[insertKind]}</span><button type="button" onClick={onClose} className="rounded-lg p-1 opacity-45 hover:opacity-80"><X size={14} /></button></div>
+          {hasTitle && <input value={insertTitle} onChange={(e) => onTitleChange(e.target.value)} placeholder="Название (необязательно)" className="w-full rounded-lg border p-2 text-sm" />}
+          {insertKind === 'screenshot' && <input type="file" accept="image/*,.gif" onChange={(e) => onFileChange(e.target.files?.[0] ?? null)} className="w-full rounded-lg border border-dashed p-2 text-xs" />}
+          <textarea value={insertBody} onChange={(e) => onBodyChange(e.target.value)} placeholder={insertKind === 'screenshot' ? 'Подпись (необязательно)' : insertKind === 'message' ? 'Текст сообщения' : 'Текст момента'} className="min-h-20 w-full rounded-lg border p-2 text-sm" />
+          {hasPhoto && <label className="block text-xs opacity-55">Фото (необязательно)<input type="file" accept="image/*,.gif" onChange={(e) => onFileChange(e.target.files?.[0] ?? null)} className="mt-1 block w-full rounded-lg border border-dashed p-2 text-xs" /></label>}
+          {insertError && <p className="text-xs text-red-700">{insertError}</p>}
+          <button type="button" disabled={insertBusy} onClick={onSubmit} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white disabled:opacity-50">{insertBusy ? 'Добавляю…' : 'Добавить сюда'}</button>
+        </div>}
+  </div>;
+}
 
 function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   const [rows, setRows] = useState<TimelineRow[]>([]); const [messages, setMessages] = useState<MessageRow[]>([]); const [filter, setFilter] = useState(''); const [editing, setEditing] = useState<string | null>(null); const [styleValue, setStyleValue] = useState<StyleValue>({}); const [textEditing, setTextEditing] = useState<string | null>(null); const [displayText, setDisplayText] = useState(''); const [page, setPage] = useState(0); const pageSize = 80;
@@ -259,7 +296,16 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     try {
       setInsertBusy(true);
       const id = crypto.randomUUID();
-      if (insertKind === 'screenshot') {
+      if (insertKind === 'message') {
+        // Обычная строка истории, набранная прямо в админке — ведёт себя как
+        // импортированное сообщение (те же поля, тот же триггер
+        // trg_sync_message_timeline на таблице messages сам создаёт запись в
+        // timeline_elements), поэтому получает точно такое же оформление и
+        // текстовый режим «письма» для длинных текстов, как обычные сообщения.
+        if (!insertBody.trim()) throw new Error('Напиши текст сообщения.');
+        const { error } = await supabase.from('messages').insert({ id, fingerprint: `manual-${id}`, sender_name: 'Запись', sent_at: at, is_system_message: false, is_multiline: insertBody.includes('\n'), original_text: insertBody.trim(), display_text: insertBody.trim(), has_media: false });
+        if (error) throw error;
+      } else if (insertKind === 'screenshot') {
         if (!insertFile) throw new Error('Выбери изображение.');
         const safe = insertFile.name.replace(/[^a-zA-Z0-9._-]/g, '_'); const path = `manual/screenshots/${id}/${safe}`;
         const { error: upError } = await supabase.storage.from('screenshots').upload(path, insertFile, { contentType: insertFile.type || 'image/jpeg' }); if (upError) throw upError;
@@ -274,33 +320,11 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     } catch (e) { setInsertError(e instanceof Error ? e.message : 'Не удалось добавить.'); } finally { setInsertBusy(false); }
   }
 
-  // Тонкая полоса-разделитель между двумя карточками истории: клик по «+»
-  // открывает выбор типа вставки и мини-форму прямо на месте, без перехода
-  // на другую вкладку и без необходимости вручную подбирать дату/время.
-  function InsertGap({ prevId, nextId }: { prevId: string | null; nextId: string | null }) {
-    if (!reorderable) return null;
-    const open = insertGap?.prevId === prevId && insertGap?.nextId === nextId;
-    if (!open) return <div className="group relative py-1"><div className="h-px bg-black/5" /><button type="button" onClick={() => openInsert(prevId, nextId)} title="Вставить сюда" className="absolute left-1/2 top-1/2 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white opacity-0 shadow-sm transition group-hover:opacity-100"><Plus size={12} /></button></div>;
-    return <div className="my-2 rounded-2xl border border-dashed border-burgundy/25 bg-[#FBF3EE] p-3">
-      {!insertKind
-        ? <div className="flex flex-wrap items-center gap-2"><span className="text-xs opacity-55">Вставить сюда:</span>{(['special', 'memory', 'screenshot'] as InsertKind[]).map((k) => <button key={k} type="button" onClick={() => setInsertKind(k)} className="rounded-lg border border-burgundy/20 bg-white px-3 py-1.5 text-xs hover:bg-burgundy hover:text-white">{insertKindLabel[k]}</button>)}<button type="button" onClick={() => setInsertGap(null)} className="ml-auto rounded-lg p-1.5 text-xs opacity-45 hover:opacity-80"><X size={14} /></button></div>
-        : <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs"><span className="opacity-55">{insertKindLabel[insertKind]}</span><button type="button" onClick={() => setInsertGap(null)} className="rounded-lg p-1 opacity-45 hover:opacity-80"><X size={14} /></button></div>
-            {insertKind !== 'screenshot' && <input value={insertTitle} onChange={(e) => setInsertTitle(e.target.value)} placeholder="Название (необязательно)" className="w-full rounded-lg border p-2 text-sm" />}
-            {insertKind === 'screenshot' && <input type="file" accept="image/*,.gif" onChange={(e) => setInsertFile(e.target.files?.[0] ?? null)} className="w-full rounded-lg border border-dashed p-2 text-xs" />}
-            <textarea value={insertBody} onChange={(e) => setInsertBody(e.target.value)} placeholder={insertKind === 'screenshot' ? 'Подпись (необязательно)' : 'Текст момента'} className="min-h-20 w-full rounded-lg border p-2 text-sm" />
-            {insertKind !== 'screenshot' && <label className="block text-xs opacity-55">Фото (необязательно)<input type="file" accept="image/*,.gif" onChange={(e) => setInsertFile(e.target.files?.[0] ?? null)} className="mt-1 block w-full rounded-lg border border-dashed p-2 text-xs" /></label>}
-            {insertError && <p className="text-xs text-red-700">{insertError}</p>}
-            <button type="button" disabled={insertBusy} onClick={() => void submitInsert()} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white disabled:opacity-50">{insertBusy ? 'Добавляю…' : 'Добавить сюда'}</button>
-          </div>}
-    </div>;
-  }
-
   return <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
     <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="font-serif text-3xl text-burgundy">Единая история</h1><p className="text-xs opacity-50">Редактируй текст и стиль, перетаскивай карточки, вставляй моменты/воспоминания/скриншоты между сообщениями.</p></div><input value={filter} onChange={(e) => { setFilter(e.target.value); setPage(0); }} placeholder="Поиск…" className="w-full max-w-xs rounded-xl border border-black/10 px-3 py-2 text-sm" /></div>
     {!reorderable && <p className="mt-3 text-xs text-amber-700">Во время поиска перетаскивание и вставка «между» отключены — очисти поиск, чтобы менять порядок.</p>}
     <div className="mt-5">
-      <InsertGap prevId={null} nextId={visible[0]?.id ?? null} />
+      <InsertGap prevId={null} nextId={visible[0]?.id ?? null} reorderable={reorderable} insertGap={insertGap} insertKind={insertKind} insertTitle={insertTitle} insertBody={insertBody} insertBusy={insertBusy} insertError={insertError} onOpen={openInsert} onClose={() => setInsertGap(null)} onPickKind={setInsertKind} onTitleChange={setInsertTitle} onBodyChange={setInsertBody} onFileChange={setInsertFile} onSubmit={() => void submitInsert()} />
       {visible.map((row, i) => {
         const m = row.message_id ? map.get(row.message_id) : null; const hasMedia = Boolean(row.media_id || row.screenshot_id || row.memory_id);
         const draggableRow = reorderable && row.type !== 'year_break' && row.type !== 'on_this_day';
@@ -334,7 +358,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
             </div>
             {editing === row.id && <div className="mt-3"><StyleEditor value={styleValue} onChange={setStyleValue} hasMedia={hasMedia} /><button onClick={() => void saveStyle(row)} className="mt-2 rounded-lg bg-burgundy px-3 py-2 text-xs text-white"><Save size={13} className="mr-1 inline" />Сохранить оформление</button></div>}
           </article>
-          <InsertGap prevId={row.id} nextId={visible[i + 1]?.id ?? null} />
+          <InsertGap prevId={row.id} nextId={visible[i + 1]?.id ?? null} reorderable={reorderable} insertGap={insertGap} insertKind={insertKind} insertTitle={insertTitle} insertBody={insertBody} insertBusy={insertBusy} insertError={insertError} onOpen={openInsert} onClose={() => setInsertGap(null)} onPickKind={setInsertKind} onTitleChange={setInsertTitle} onBodyChange={setInsertBody} onFileChange={setInsertFile} onSubmit={() => void submitInsert()} />
         </div>;
       })}
       {reorderable && visible.length > 0 && <div onDragOver={(e) => { if (!draggedId) return; e.preventDefault(); setDragOverId('end'); }} onDrop={(e) => { e.preventDefault(); onDrop('end'); }} className={`mt-1 rounded-xl border border-dashed p-3 text-center text-[11px] opacity-35 ${dragOverId === 'end' ? 'border-burgundy/50 opacity-70' : 'border-black/10'}`}>перетащи сюда, чтобы переместить в конец страницы</div>}

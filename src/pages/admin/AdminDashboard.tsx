@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { BarChart3, Eye, FileArchive, ImagePlus, Images, LogOut, RefreshCw, Save, Settings2, Sparkles, Star, Trash2 } from 'lucide-react';
+import { BarChart3, Eye, FileArchive, GripVertical, ImagePlus, Images, LogOut, Plus, RefreshCw, Save, Settings2, Sparkles, Star, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import AiControlPanel from './AiControlPanel';
 import StyleEditor, { type StyleValue } from './StyleEditor';
@@ -137,14 +137,153 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   return <section className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]"><div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm"><div className="flex items-center gap-3"><FileArchive className="text-burgundy" /><div><h1 className="font-serif text-3xl text-burgundy">Импорт истории</h1><p className="text-xs opacity-55">Полный экспорт с медиа можно загружать снова и снова — существующие сообщения не дублируются.</p></div></div><form onSubmit={(e) => void submit(e)} className="mt-7 space-y-4"><label className="block text-sm">ZIP-архив или .txt переписки<input type="file" accept=".zip,application/zip,.txt,text/plain" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="mt-2 block w-full rounded-xl border border-dashed border-burgundy/20 bg-[#FBF3EE] p-3 text-sm" required /><span className="mt-2 block text-[11px] leading-relaxed opacity-50">ZIP «с медиа» из WhatsApp — фото/видео/голосовые подставятся автоматически. Обычный .txt переписки (без медиа) тоже подойдёт — сообщения импортируются, а на месте фото появится плейсхолдер «медиа отсутствует», который потом можно вручную заменить реальным фото или скриншотом (вкладки «Скриншоты» / «Воспоминания»). Позже можно доимпортировать тот же период уже полным ZIP — недостающие файлы подтянутся автоматически, дублей не будет.</span></label>{file && <div className="rounded-xl bg-black/[.03] p-3 text-xs">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB {file.name.toLowerCase().endsWith('.txt') && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">без медиа</span>}</div>}{needsStart && <label className="block text-sm">Дата начала истории<input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required className="mt-2 block w-full rounded-xl border border-black/10 p-3" /></label>}<button disabled={!file || busy || (needsStart && !startDate)} className="w-full rounded-xl bg-burgundy px-5 py-3 text-sm text-white disabled:opacity-40">{busy ? 'Обрабатываю архив…' : 'Загрузить и собрать историю'}</button></form>{busy && <div className="mt-6 space-y-2 rounded-2xl bg-[#F6EFE0] p-4">{steps.map((step, i) => <div key={step} className={`flex items-center gap-3 text-sm ${i === steps.length - 1 ? 'opacity-35' : ''}`}><span className={`h-2 w-2 rounded-full ${i < steps.length - 1 ? 'animate-pulse bg-burgundy' : 'bg-black/10'}`} />{step}{i === 0 && <span className="ml-auto text-xs opacity-45">сервер</span>}</div>)}</div>}{report && <pre className="mt-5 max-h-80 overflow-auto rounded-xl bg-[#211820] p-4 text-xs text-white">{JSON.stringify(report, null, 2)}</pre>}</div><div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm"><h2 className="font-serif text-2xl text-burgundy">История импортов</h2><div className="mt-4 space-y-3">{imports.map((item) => <div key={item.id} className="rounded-xl border border-black/5 p-3"><div className="flex justify-between gap-2 text-xs"><span className="truncate">{item.file_name}</span><span>{item.status}</span></div><div className="mt-2 grid grid-cols-2 gap-1 text-[11px] opacity-55"><span>{dateTime(item.started_at)}</span><span>+{item.messages_new} новых</span><span>{item.messages_duplicate} дублей</span><span>медиа {item.media_matched}/{item.media_found}</span></div>{item.media_missing > 0 && <div className="mt-2 text-xs text-amber-700">Не найдено media: {item.media_missing}</div>}{item.error_message && <div className="mt-2 text-xs text-red-700">{item.error_message}</div>}{item.log?.length ? <details className="mt-3"><summary className="cursor-pointer text-xs opacity-55">Лог обработки</summary><div className="mt-2 space-y-1 border-l border-black/10 pl-3">{item.log.map((entry, index) => <div key={`${item.id}-${index}`} className="text-[11px]"><span className="font-medium">{entry.step}</span> · {entry.message}</div>)}</div></details> : null}</div>)}</div></div></section>;
 }
 
+// Возвращает ISO-момент времени строго между двумя соседями (или рядом с
+// единственным соседом, если элемент кладут в начало/конец списка). Именно
+// этим значением новый/перетащенный элемент занимает нужное место в общей
+// хронологии — без него админу пришлось бы вручную подбирать дату и время.
+function midpointIso(prevIso: string | null, nextIso: string | null): string {
+  const prev = prevIso ? new Date(prevIso).getTime() : null;
+  const next = nextIso ? new Date(nextIso).getTime() : null;
+  if (prev !== null && next !== null) return new Date(prev + Math.max(1, Math.round((next - prev) / 2))).toISOString();
+  if (prev !== null) return new Date(prev + 1000).toISOString();
+  if (next !== null) return new Date(next - 1000).toISOString();
+  return new Date().toISOString();
+}
+
+type InsertKind = 'special' | 'memory' | 'screenshot';
+const insertKindLabel: Record<InsertKind, string> = { special: 'Особый момент', memory: 'Воспоминание', screenshot: 'Скриншот' };
+
 function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   const [rows, setRows] = useState<TimelineRow[]>([]); const [messages, setMessages] = useState<MessageRow[]>([]); const [filter, setFilter] = useState(''); const [editing, setEditing] = useState<string | null>(null); const [styleValue, setStyleValue] = useState<StyleValue>({}); const [textEditing, setTextEditing] = useState<string | null>(null); const [displayText, setDisplayText] = useState(''); const [page, setPage] = useState(0); const pageSize = 80;
-  const load = useCallback(async () => { const [{ data: elements }, { data: msgs }] = await Promise.all([supabase.from('timeline_elements').select('id,type,occurred_at,message_id,media_id,memory_id,screenshot_id,style,mood,importance,is_published').order('occurred_at', { ascending: false }).range(page * pageSize, page * pageSize + pageSize - 1), supabase.from('messages').select('id,sent_at,sender_name,original_text,display_text').eq('is_system_message', false).order('sent_at', { ascending: false }).limit(1200)]); setRows((elements ?? []) as TimelineRow[]); setMessages((msgs ?? []) as MessageRow[]); }, [page]);
-  useEffect(() => { void load(); }, [load, refreshKey]); const map = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]); const visible = rows.filter((r) => { const m = r.message_id ? map.get(r.message_id) : null; const q = filter.toLowerCase().trim(); return !q || r.type.includes(q) || r.mood?.includes(q) || m?.original_text?.toLowerCase().includes(q); });
+  const [draggedId, setDraggedId] = useState<string | null>(null); const [dragOverId, setDragOverId] = useState<string | 'end' | null>(null); const [busyId, setBusyId] = useState<string | null>(null);
+  const [insertGap, setInsertGap] = useState<{ prevId: string | null; nextId: string | null } | null>(null); const [insertKind, setInsertKind] = useState<InsertKind | null>(null);
+  const [insertTitle, setInsertTitle] = useState(''); const [insertBody, setInsertBody] = useState(''); const [insertFile, setInsertFile] = useState<File | null>(null); const [insertBusy, setInsertBusy] = useState(false); const [insertError, setInsertError] = useState('');
+
+  // Сортировка по возрастанию (старое → новое), как в самой читалке — так
+  // порядок карточек в админке совпадает с тем, что увидит читатель, и
+  // перетаскивание/вставка «между двумя» интуитивно понятны.
+  const load = useCallback(async () => { const [{ data: elements }, { data: msgs }] = await Promise.all([supabase.from('timeline_elements').select('id,type,occurred_at,message_id,media_id,memory_id,screenshot_id,style,mood,importance,is_published').order('occurred_at', { ascending: true }).range(page * pageSize, page * pageSize + pageSize - 1), supabase.from('messages').select('id,sent_at,sender_name,original_text,display_text').eq('is_system_message', false).order('sent_at', { ascending: false }).limit(1200)]); setRows((elements ?? []) as TimelineRow[]); setMessages((msgs ?? []) as MessageRow[]); }, [page]);
+  useEffect(() => { void load(); }, [load, refreshKey]); const map = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
+  const q = filter.toLowerCase().trim();
+  const visible = rows.filter((r) => { const m = r.message_id ? map.get(r.message_id) : null; return !q || r.type.includes(q) || r.mood?.includes(q) || m?.original_text?.toLowerCase().includes(q); });
+  // Перетаскивание и «вставить между» полагаются на то, что соседи в
+  // отфильтрованном списке — реальные соседи в хронологии. Пока идёт поиск
+  // это не гарантировано, поэтому оба режима на время фильтра выключены.
+  const reorderable = q.length === 0;
+
   async function saveStyle(id: string) { try { const { error } = await supabase.from('timeline_elements').update({ style: styleValue }).eq('id', id); if (error) throw error; setEditing(null); await load(); } catch (e) { window.alert(e instanceof Error ? e.message : 'Не удалось сохранить стиль.'); } }
   async function saveText(id: string) { const { error } = await supabase.from('messages').update({ display_text: displayText || null }).eq('id', id); if (error) window.alert(error.message); else { setTextEditing(null); await load(); } }
   async function toggle(row: TimelineRow) { const { error } = await supabase.from('timeline_elements').update({ is_published: !row.is_published }).eq('id', row.id); if (error) window.alert(error.message); else await load(); }
-  return <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="font-serif text-3xl text-burgundy">Единая история</h1><p className="text-xs opacity-50">Редактируй display_text и визуальный стиль, не меняя original_text.</p></div><input value={filter} onChange={(e) => { setFilter(e.target.value); setPage(0); }} placeholder="Поиск…" className="w-full max-w-xs rounded-xl border border-black/10 px-3 py-2 text-sm" /></div><div className="mt-5 space-y-3">{visible.map((row) => { const m = row.message_id ? map.get(row.message_id) : null; const hasMedia = Boolean(row.media_id || row.screenshot_id || row.memory_id); return <article key={row.id} className={`rounded-2xl border p-4 ${row.is_published ? 'border-black/7 bg-[#FBF8F5]' : 'border-dashed border-black/10 bg-black/[.02] opacity-55'}`}><div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[1.4px] opacity-45"><span>{row.type}</span><span>·</span><span>{dateTime(row.occurred_at)}</span>{row.mood && <span>· {row.mood}</span>}<span className="ml-auto">importance {row.importance}</span></div>{m && <div className="mt-3"><div className="text-xs opacity-45">{m.sender_name}</div>{textEditing === m.id ? <div className="mt-2 space-y-2"><textarea value={displayText} onChange={(e) => setDisplayText(e.target.value)} className="min-h-28 w-full rounded-xl border p-3 text-sm" /><button onClick={() => void saveText(m.id)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить текст</button></div> : <p className="mt-1 whitespace-pre-wrap font-serif text-lg">{m.display_text ?? m.original_text ?? 'медиа без подписи'}</p>}</div>}{(row.media_id || row.screenshot_id || row.memory_id) && <div className="mt-3 rounded-xl bg-white p-3 text-xs opacity-55">Медиа/вложение привязано к этому элементу</div>}<div className="mt-4 flex flex-wrap gap-2"><button onClick={() => { setTextEditing(m?.id ?? null); setDisplayText(m?.display_text ?? m?.original_text ?? ''); }} disabled={!m} className="rounded-lg border px-3 py-2 text-xs disabled:opacity-30">Текст</button><button onClick={() => { setEditing(editing === row.id ? null : row.id); setStyleValue((row.style ?? {}) as StyleValue); }} className="rounded-lg border px-3 py-2 text-xs">{editing === row.id ? 'Скрыть оформление' : 'Оформление'}</button><button onClick={() => void toggle(row)} className="rounded-lg border px-3 py-2 text-xs">{row.is_published ? 'Скрыть' : 'Опубликовать'}</button></div>{editing === row.id && <div className="mt-3"><StyleEditor value={styleValue} onChange={setStyleValue} hasMedia={hasMedia} /><button onClick={() => void saveStyle(row.id)} className="mt-2 rounded-lg bg-burgundy px-3 py-2 text-xs text-white"><Save size={13} className="mr-1 inline" />Сохранить оформление</button></div>}</article>; })}</div><div className="mt-5 flex items-center justify-between text-xs"><button disabled={page === 0} onClick={() => setPage((x) => Math.max(0, x - 1))} className="rounded-lg border px-3 py-2 disabled:opacity-30">Назад</button><span className="opacity-45">страница {page + 1}</span><button disabled={rows.length < pageSize} onClick={() => setPage((x) => x + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-30">Дальше</button></div></section>;
+
+  // Двигает элемент строго между `prev` и `next`. Для сообщений/медиа дата
+  // хранится только в timeline_elements — её и меняем напрямую. У
+  // воспоминаний/скриншотов дата и позиция-якорь живут в исходной таблице
+  // (memories/screenshots), а в timeline_elements её пересчитывает триггер —
+  // поэтому для них обновляем исходную таблицу и сбрасываем старый якорь
+  // «после сообщения», иначе триггер тут же вернёт элемент на старое место.
+  async function moveElement(row: TimelineRow, prev: TimelineRow | null, next: TimelineRow | null) {
+    const at = midpointIso(prev?.occurred_at ?? null, next?.occurred_at ?? null);
+    setBusyId(row.id);
+    const result = row.memory_id
+      ? await supabase.from('memories').update({ occurred_at: at, place_after_message_id: null }).eq('id', row.memory_id)
+      : row.screenshot_id
+      ? await supabase.from('screenshots').update({ occurred_at: at, place_after_message_id: null, position: 'custom' }).eq('id', row.screenshot_id)
+      : await supabase.from('timeline_elements').update({ occurred_at: at }).eq('id', row.id);
+    setBusyId(null);
+    if (result.error) window.alert(result.error.message); else await load();
+  }
+
+  function neighborsBefore(targetId: string | 'end', excludeId: string): { prev: TimelineRow | null; next: TimelineRow | null } {
+    const ordered = visible.filter((r) => r.id !== excludeId);
+    if (targetId === 'end') return { prev: ordered[ordered.length - 1] ?? null, next: null };
+    const idx = ordered.findIndex((r) => r.id === targetId);
+    return { prev: ordered[idx - 1] ?? null, next: ordered[idx] ?? null };
+  }
+  function onDrop(targetId: string | 'end') {
+    setDragOverId(null);
+    if (!draggedId || draggedId === targetId) return;
+    const dragged = rows.find((r) => r.id === draggedId); if (!dragged) return;
+    if (dragged.type === 'year_break' || dragged.type === 'on_this_day') return;
+    const { prev, next } = neighborsBefore(targetId, draggedId);
+    void moveElement(dragged, prev, next);
+  }
+
+  function openInsert(prevId: string | null, nextId: string | null) { setInsertGap({ prevId, nextId }); setInsertKind(null); setInsertTitle(''); setInsertBody(''); setInsertFile(null); setInsertError(''); }
+  async function submitInsert() {
+    if (!insertGap || !insertKind) return;
+    setInsertError('');
+    const prevRow = rows.find((r) => r.id === insertGap.prevId) ?? null; const nextRow = rows.find((r) => r.id === insertGap.nextId) ?? null;
+    const at = midpointIso(prevRow?.occurred_at ?? null, nextRow?.occurred_at ?? null);
+    try {
+      setInsertBusy(true);
+      const id = crypto.randomUUID();
+      if (insertKind === 'screenshot') {
+        if (!insertFile) throw new Error('Выбери изображение.');
+        const safe = insertFile.name.replace(/[^a-zA-Z0-9._-]/g, '_'); const path = `manual/screenshots/${id}/${safe}`;
+        const { error: upError } = await supabase.storage.from('screenshots').upload(path, insertFile, { contentType: insertFile.type || 'image/jpeg' }); if (upError) throw upError;
+        const { error } = await supabase.from('screenshots').insert({ id, storage_path: path, title: insertTitle.trim() || null, description: null, caption: insertBody.trim() || null, occurred_at: at, position: 'custom', animation: 'fade', style: { frame: 'phone' } }); if (error) throw error;
+      } else {
+        if (!insertBody.trim()) throw new Error('Напиши текст момента/воспоминания.');
+        let photoPath: string | null = null;
+        if (insertFile) { const safe = insertFile.name.replace(/[^a-zA-Z0-9._-]/g, '_'); photoPath = `manual/memories/${id}/${safe}`; const { error: upError } = await supabase.storage.from('screenshots').upload(photoPath, insertFile, { contentType: insertFile.type || 'image/jpeg' }); if (upError) throw upError; }
+        const { error } = await supabase.from('memories').insert({ id, title: insertTitle.trim() || null, body: insertBody.trim(), occurred_at: at, importance: 3, photo_storage_path: photoPath, style: {}, metadata: insertKind === 'special' ? { kind: 'special' } : {} }); if (error) throw error;
+      }
+      setInsertGap(null); setInsertKind(null); await load();
+    } catch (e) { setInsertError(e instanceof Error ? e.message : 'Не удалось добавить.'); } finally { setInsertBusy(false); }
+  }
+
+  // Тонкая полоса-разделитель между двумя карточками истории: клик по «+»
+  // открывает выбор типа вставки и мини-форму прямо на месте, без перехода
+  // на другую вкладку и без необходимости вручную подбирать дату/время.
+  function InsertGap({ prevId, nextId }: { prevId: string | null; nextId: string | null }) {
+    if (!reorderable) return null;
+    const open = insertGap?.prevId === prevId && insertGap?.nextId === nextId;
+    if (!open) return <div className="group relative py-1"><div className="h-px bg-black/5" /><button type="button" onClick={() => openInsert(prevId, nextId)} title="Вставить сюда" className="absolute left-1/2 top-1/2 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white opacity-0 shadow-sm transition group-hover:opacity-100"><Plus size={12} /></button></div>;
+    return <div className="my-2 rounded-2xl border border-dashed border-burgundy/25 bg-[#FBF3EE] p-3">
+      {!insertKind
+        ? <div className="flex flex-wrap items-center gap-2"><span className="text-xs opacity-55">Вставить сюда:</span>{(['special', 'memory', 'screenshot'] as InsertKind[]).map((k) => <button key={k} type="button" onClick={() => setInsertKind(k)} className="rounded-lg border border-burgundy/20 bg-white px-3 py-1.5 text-xs hover:bg-burgundy hover:text-white">{insertKindLabel[k]}</button>)}<button type="button" onClick={() => setInsertGap(null)} className="ml-auto rounded-lg p-1.5 text-xs opacity-45 hover:opacity-80"><X size={14} /></button></div>
+        : <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs"><span className="opacity-55">{insertKindLabel[insertKind]}</span><button type="button" onClick={() => setInsertGap(null)} className="rounded-lg p-1 opacity-45 hover:opacity-80"><X size={14} /></button></div>
+            {insertKind !== 'screenshot' && <input value={insertTitle} onChange={(e) => setInsertTitle(e.target.value)} placeholder="Название (необязательно)" className="w-full rounded-lg border p-2 text-sm" />}
+            {insertKind === 'screenshot' && <input type="file" accept="image/*,.gif" onChange={(e) => setInsertFile(e.target.files?.[0] ?? null)} className="w-full rounded-lg border border-dashed p-2 text-xs" />}
+            <textarea value={insertBody} onChange={(e) => setInsertBody(e.target.value)} placeholder={insertKind === 'screenshot' ? 'Подпись (необязательно)' : 'Текст момента'} className="min-h-20 w-full rounded-lg border p-2 text-sm" />
+            {insertKind !== 'screenshot' && <label className="block text-xs opacity-55">Фото (необязательно)<input type="file" accept="image/*,.gif" onChange={(e) => setInsertFile(e.target.files?.[0] ?? null)} className="mt-1 block w-full rounded-lg border border-dashed p-2 text-xs" /></label>}
+            {insertError && <p className="text-xs text-red-700">{insertError}</p>}
+            <button type="button" disabled={insertBusy} onClick={() => void submitInsert()} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white disabled:opacity-50">{insertBusy ? 'Добавляю…' : 'Добавить сюда'}</button>
+          </div>}
+    </div>;
+  }
+
+  return <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+    <div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="font-serif text-3xl text-burgundy">Единая история</h1><p className="text-xs opacity-50">Редактируй текст и стиль, перетаскивай карточки, вставляй моменты/воспоминания/скриншоты между сообщениями.</p></div><input value={filter} onChange={(e) => { setFilter(e.target.value); setPage(0); }} placeholder="Поиск…" className="w-full max-w-xs rounded-xl border border-black/10 px-3 py-2 text-sm" /></div>
+    {!reorderable && <p className="mt-3 text-xs text-amber-700">Во время поиска перетаскивание и вставка «между» отключены — очисти поиск, чтобы менять порядок.</p>}
+    <div className="mt-5">
+      <InsertGap prevId={null} nextId={visible[0]?.id ?? null} />
+      {visible.map((row, i) => {
+        const m = row.message_id ? map.get(row.message_id) : null; const hasMedia = Boolean(row.media_id || row.screenshot_id || row.memory_id);
+        const draggableRow = reorderable && row.type !== 'year_break' && row.type !== 'on_this_day';
+        return <div key={row.id}>
+          <article
+            draggable={draggableRow}
+            onDragStart={() => setDraggedId(row.id)}
+            onDragEnd={() => { setDraggedId(null); setDragOverId(null); }}
+            onDragOver={(e) => { if (!reorderable || !draggedId || draggedId === row.id) return; e.preventDefault(); setDragOverId(row.id); }}
+            onDrop={(e) => { if (!reorderable) return; e.preventDefault(); onDrop(row.id); }}
+            className={`rounded-2xl border p-4 transition ${row.is_published ? 'border-black/7 bg-[#FBF8F5]' : 'border-dashed border-black/10 bg-black/[.02] opacity-55'} ${dragOverId === row.id ? 'ring-2 ring-burgundy/50' : ''} ${draggedId === row.id ? 'opacity-40' : ''} ${busyId === row.id ? 'opacity-60' : ''}`}
+          >
+            <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[1.4px] opacity-45">{draggableRow && <GripVertical size={13} className="cursor-grab opacity-40" />}<span>{row.type}</span><span>·</span><span>{dateTime(row.occurred_at)}</span>{row.mood && <span>· {row.mood}</span>}<span className="ml-auto">importance {row.importance}</span></div>
+            {m && <div className="mt-3"><div className="text-xs opacity-45">{m.sender_name}</div>{textEditing === m.id ? <div className="mt-2 space-y-2"><textarea value={displayText} onChange={(e) => setDisplayText(e.target.value)} className="min-h-28 w-full rounded-xl border p-3 text-sm" /><button onClick={() => void saveText(m.id)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить текст</button></div> : <p className="mt-1 whitespace-pre-wrap font-serif text-lg">{m.display_text ?? m.original_text ?? 'медиа без подписи'}</p>}</div>}
+            {(row.media_id || row.screenshot_id || row.memory_id) && <div className="mt-3 rounded-xl bg-white p-3 text-xs opacity-55">Медиа/вложение привязано к этому элементу</div>}
+            <div className="mt-4 flex flex-wrap gap-2"><button onClick={() => { setTextEditing(m?.id ?? null); setDisplayText(m?.display_text ?? m?.original_text ?? ''); }} disabled={!m} className="rounded-lg border px-3 py-2 text-xs disabled:opacity-30">Текст</button><button onClick={() => { setEditing(editing === row.id ? null : row.id); setStyleValue((row.style ?? {}) as StyleValue); }} className="rounded-lg border px-3 py-2 text-xs">{editing === row.id ? 'Скрыть оформление' : 'Оформление'}</button><button onClick={() => void toggle(row)} className="rounded-lg border px-3 py-2 text-xs">{row.is_published ? 'Скрыть' : 'Опубликовать'}</button></div>
+            {editing === row.id && <div className="mt-3"><StyleEditor value={styleValue} onChange={setStyleValue} hasMedia={hasMedia} /><button onClick={() => void saveStyle(row.id)} className="mt-2 rounded-lg bg-burgundy px-3 py-2 text-xs text-white"><Save size={13} className="mr-1 inline" />Сохранить оформление</button></div>}
+          </article>
+          <InsertGap prevId={row.id} nextId={visible[i + 1]?.id ?? null} />
+        </div>;
+      })}
+      {reorderable && visible.length > 0 && <div onDragOver={(e) => { if (!draggedId) return; e.preventDefault(); setDragOverId('end'); }} onDrop={(e) => { e.preventDefault(); onDrop('end'); }} className={`mt-1 rounded-xl border border-dashed p-3 text-center text-[11px] opacity-35 ${dragOverId === 'end' ? 'border-burgundy/50 opacity-70' : 'border-black/10'}`}>перетащи сюда, чтобы переместить в конец страницы</div>}
+    </div>
+    <div className="mt-5 flex items-center justify-between text-xs"><button disabled={page === 0} onClick={() => setPage((x) => Math.max(0, x - 1))} className="rounded-lg border px-3 py-2 disabled:opacity-30">Назад</button><span className="opacity-45">страница {page + 1}</span><button disabled={rows.length < pageSize} onClick={() => setPage((x) => x + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-30">Дальше</button></div>
+  </section>;
 }
 
 function MemoriesPanel({ specialOnly }: { specialOnly: boolean }) {

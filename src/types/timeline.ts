@@ -76,6 +76,7 @@ export type TimelineElementType =
   | 'sticker'
   | 'memory'
   | 'special'
+  | 'interactive'
   | 'screenshot'
   | 'year_break'
   | 'on_this_day'

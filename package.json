@@ -9,9 +9,9 @@
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx",
     "typecheck": "tsc --noEmit",
-    "test:parser": "npx tsx server/parser/selfTest.ts",
-    "test:media": "npx tsx server/media/selfTest.ts",
-    "test:ai": "npx tsx server/ai/selfTest.ts",
+    "test:parser": "node --import tsx server/parser/selfTest.ts",
+    "test:media": "node --import tsx server/media/selfTest.ts",
+    "test:ai": "node --import tsx server/ai/selfTest.ts",
     "test": "npm run test:parser && npm run test:media && npm run test:ai"
   },
   "dependencies": {

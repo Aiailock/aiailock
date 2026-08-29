@@ -19,6 +19,8 @@ export interface StyleValue {
 
 const fontClassByOption: Record<string, string> = {
   serif: 'font-serif', script: 'font-script', sans: 'font-sans', pixel: 'font-pixel', mono: 'font-mono',
+  literata: 'font-literata', yeseva: 'font-yeseva', comfort: 'font-comfort',
+  badscript: 'font-badscript', marck: 'font-marck', pacifico: 'font-pacifico', neucha: 'font-neucha',
 };
 
 // Понятный на русском визуальный редактор JSON-поля `style` у элемента
@@ -52,7 +54,7 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
   }
 
   const previewBg = bgByZone[zone] ?? bgByZone.default;
-  const isDark = zone === 'night' || zone === 'burgundy' || zone === 'pixel' || zone === 'dusk';
+  const darkFrame = ['stars', 'neon', 'pixel', 'moonlit'].includes(frame);
 
   return (
     <div className="rounded-2xl border border-black/10 bg-[#FBF8F5] p-4">
@@ -115,9 +117,7 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
               </div>
             </Frame>
           ) : (
-            <p className={`relative z-10 max-w-[280px] text-center text-lg leading-relaxed ${fontClassByOption[font] ?? 'font-serif'} ${isDark ? 'text-[#F4EAF0]' : 'text-ink'}`}>
-              Пример текста сообщения для превью оформления.
-            </p>
+            <Frame frame={frame}><p className={`relative z-10 max-w-[280px] rounded-xl p-4 text-center text-lg leading-relaxed ${fontClassByOption[font] ?? 'font-serif'} ${darkFrame ? 'text-[#F4EAF0]' : 'text-ink'}`}>Пример текста сообщения для превью оформления.</p></Frame>
           )}
         </div>
       </div>

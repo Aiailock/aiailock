@@ -61,12 +61,28 @@ export const ZONE_OPTIONS: StyleOption[] = [
 ];
 
 export const FONT_OPTIONS: StyleOption[] = [
-  { id: '', label: 'По умолчанию (Cormorant)' },
+  { id: '', label: 'Общий шрифт reader' },
   { id: 'serif', label: 'Serif — Cormorant Garamond' },
   { id: 'script', label: 'Рукописный — Caveat' },
+  { id: 'literata', label: 'Книжный — Literata' },
+  { id: 'yeseva', label: 'Торжественный — Yeseva One' },
+  { id: 'comfort', label: 'Мягкий — Comfortaa' },
+  { id: 'badscript', label: 'Личное письмо — Bad Script' },
+  { id: 'marck', label: 'Чернила — Marck Script' },
+  { id: 'pacifico', label: 'Тёплый — Pacifico' },
+  { id: 'neucha', label: 'Записка — Neucha' },
   { id: 'sans', label: 'Прямой — DM Sans' },
   { id: 'pixel', label: 'Пиксельный — Press Start 2P' },
   { id: 'mono', label: 'Ретро-терминал — VT323' },
+];
+
+export const INTERACTION_OPTIONS: StyleOption[] = [
+  { id: 'spoiler', label: 'Секрет', hint: 'Текст раскрывается по нажатию' },
+  { id: 'gift', label: 'Подарок', hint: 'Коробочка с текстом или фото внутри' },
+  { id: 'letter', label: 'Письмо', hint: 'Закрытый конверт превращается в письмо' },
+  { id: 'flip', label: 'Карточка-перевёртыш', hint: 'Сюрприз на обратной стороне' },
+  { id: 'photo-reveal', label: 'Проявить фото', hint: 'Фото появляется только после нажатия' },
+  { id: 'promise', label: 'Обещание', hint: 'Небольшой сердечный ритуал' },
 ];
 
 export function findLabel(options: StyleOption[], id: string | undefined | null) {

@@ -94,6 +94,29 @@ export async function fetchPublicTimeline(cursor: PublicTimelineCursor | null, t
   };
 }
 
+export type ReaderAnalyticsAction = 'open' | 'progress' | 'complete';
+
+export async function recordReaderAnalytics(input: {
+  action: ReaderAnalyticsAction;
+  visitorId: string;
+  visitId: string;
+  elementId?: string;
+  position?: number;
+  progress?: number;
+}, token: string): Promise<{ total: number | null }> {
+  const { data, error } = await supabase.functions.invoke('reader-analytics', {
+    body: {
+      ...input,
+      userAgent: input.action === 'open' ? navigator.userAgent : undefined,
+      viewportWidth: input.action === 'open' ? window.innerWidth : undefined,
+    },
+    headers: { 'x-reader-access-token': token },
+  });
+  // Analytics must never interrupt the story. It is intentionally best-effort.
+  if (error && import.meta.env.DEV) console.warn('Reader analytics:', error.message);
+  return { total: typeof data?.total === 'number' ? data.total : null };
+}
+
 export async function fetchMediaUrl(input: { mediaId?: string; screenshotId?: string; memoryId?: string }, token: string): Promise<{ url: string; thumbnailUrl: string | null }> {
   const { data, error } = await supabase.functions.invoke('get-media-url', {
     body: input,

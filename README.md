@@ -13,6 +13,7 @@ The project is now completed across the planned stages:
 - **5. Reader:** single continuous book-like page, mobile-first, mood zones, year pauses, memory cards, photo/video/audio/sticker/document rendering, scroll reveal, SVG botanical decoration, original-text disclosure, infinite pagination.
 - **6. Admin:** ZIP import, import history/logs, statistics dashboard, unified timeline controls, hide/show, text/style editing, memories, special moments, screenshots, media manager, AI controls, visual theme settings, reader password, mobile preview with secure admin-only bypass.
 - **7. Hardening:** RLS, private buckets, signed URLs, reader access token, noindex/security headers, PWA shell, reduced-motion support, empty states, lazy media loading and admin-only preview tokens. A final additive migration (`0010_completion_polish.sql`) closes metadata/positioning gaps and adds manual memory photos.
+- **8. Interaction + analytics:** real and bulk deletion, bulk styling, text frames, six tap-to-reveal moment types, additional fonts, browser-friendly admin controls and privacy-preserving reader progress statistics (`0012_interactions_analytics_admin.sql`).
 
 The public reader never receives `service_role`, AI metadata internals, prompt versions, import logs or admin controls.
 
@@ -54,6 +55,8 @@ The migration chain is intentionally ordered:
 0008_ai_upsert_constraints.sql
 0009_special_timeline_service_helper.sql
 0010_completion_polish.sql
+0011_fix_ambiguous_kind_column.sql
+0012_interactions_analytics_admin.sql
 ```
 
 Supabase's CLI supports linking a project and deploying migrations/functions as code.
@@ -80,6 +83,7 @@ supabase functions deploy process-ai
 supabase functions deploy get-media-url
 supabase functions deploy public-timeline
 supabase functions deploy reader-access
+supabase functions deploy reader-analytics
 ```
 
 `supabase/config.toml` already declares which functions require JWT verification:
@@ -89,9 +93,10 @@ supabase functions deploy reader-access
 - `get-media-url` → public reader endpoint
 - `public-timeline` → public reader endpoint
 - `reader-access` → public reader endpoint
+- `reader-analytics` → public endpoint with its own signed reader-token check
 
 ### Final schema migration
-Run `supabase db push` once from a clean linked project. The ordered migration chain through `0010_completion_polish.sql` is applied automatically.
+Run `supabase db push` once from a clean linked project. The ordered migration chain through `0012_interactions_analytics_admin.sql` is applied automatically.
 
 ## Required Edge Function secret
 

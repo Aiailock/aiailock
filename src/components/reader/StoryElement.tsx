@@ -4,6 +4,7 @@ import type { PublicTimelineRow } from '@/lib/readerApi';
 import { useReaderSettings, type TimeFormatId } from '@/lib/readerSettingsContext';
 import ReaderMedia from './ReaderMedia';
 import EffectsLayer from './EffectsLayer';
+import InteractiveMoment from './InteractiveMoment';
 
 // A message renders as a full "letter" layout (bigger serif type, generous
 // paragraph spacing, no visual truncation) once it crosses this length —
@@ -16,13 +17,13 @@ const moodLabel: Record<string, string> = {
 };
 
 export const bgByZone: Record<string, string> = {
-  default: 'linear-gradient(180deg,#FBF3EE,#F7E6E0)',
-  romantic: 'linear-gradient(180deg,#FFF5F4,#F2C9C2)',
+  default: 'linear-gradient(180deg,var(--cream),color-mix(in srgb,var(--blush) 30%,var(--cream)))',
+  romantic: 'linear-gradient(180deg,color-mix(in srgb,var(--cream) 78%,white),var(--blush))',
   night: 'linear-gradient(180deg,#2C2140,#1F1730)',
-  burgundy: 'linear-gradient(180deg,#4A1B2F,#2E1020)',
+  burgundy: 'linear-gradient(180deg,var(--burgundy),color-mix(in srgb,var(--burgundy) 74%,black))',
   pixel: 'linear-gradient(180deg,#0D1321,#1B2340)',
-  gif: 'linear-gradient(180deg,#FFF6DA,#FFE39A)',
-  travel: 'linear-gradient(180deg,#FCEFD8,#F4C89A)',
+  gif: 'linear-gradient(180deg,color-mix(in srgb,var(--gold) 18%,white),color-mix(in srgb,var(--gold) 55%,white))',
+  travel: 'linear-gradient(180deg,color-mix(in srgb,var(--peach) 20%,white),var(--peach))',
   winter: 'linear-gradient(180deg,#EAF3FB,#D3E6F5)',
   sepia: 'linear-gradient(180deg,#EFE3C9,#DCC9A0)',
   rain: 'linear-gradient(180deg,#DCE3EA,#B9C6D1)',
@@ -68,6 +69,8 @@ function year(value: string) { return Number(new Intl.DateTimeFormat('en', { yea
 
 const fontClassByOption: Record<string, string> = {
   serif: 'font-serif', script: 'font-script', sans: 'font-sans', pixel: 'font-pixel', mono: 'font-mono',
+  literata: 'font-literata', yeseva: 'font-yeseva', comfort: 'font-comfort',
+  badscript: 'font-badscript', marck: 'font-marck', pacifico: 'font-pacifico', neucha: 'font-neucha',
 };
 
 function zoneOf(row: PublicTimelineRow) {
@@ -155,7 +158,7 @@ function MotionWrap({ children, className, reduced }: { children: React.ReactNod
 
 export default function StoryElement({ row, token }: { row: PublicTimelineRow; token: string }) {
   const reducedMotion = useReducedMotion();
-  const { specialMomentLabel, timeFormat } = useReaderSettings();
+  const { specialMomentLabel, timeFormat, readerFont } = useReaderSettings();
   const zone = zoneOf(row);
   const ref = useRef<HTMLElement | null>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start end', 'end start'] });
@@ -184,12 +187,15 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
   const label = row.mood ? moodLabel[row.mood] : '';
   const media = Boolean(row.media_id || row.screenshot_id || row.memory_photo_storage_path);
   const isSpecial = row.type === 'special' || row.metadata?.kind === 'special';
+  const isInteractive = row.type === 'interactive' || row.metadata?.kind === 'interactive';
+  const interactionKind = typeof row.metadata?.interaction === 'string' ? row.metadata.interaction : 'spoiler';
   // Per-element override (Admin → Оформление → «Формат даты/времени именно
   // здесь») falls back to the site-wide setting when not set.
   const effectiveTimeFormat = typeof row.style?.timeFormat === 'string' && row.style.timeFormat ? (row.style.timeFormat as TimeFormatId) : timeFormat;
   const decoration = Array.isArray(row.style?.decoration) ? (row.style?.decoration as string[]) : null;
   const gifUrl = typeof row.style?.gifUrl === 'string' ? (row.style.gifUrl as string) : null;
-  const fontOverride = typeof row.style?.font === 'string' ? fontClassByOption[row.style.font as string] : null;
+  const selectedFont = typeof row.style?.font === 'string' && row.style.font ? row.style.font : readerFont;
+  const fontOverride = fontClassByOption[selectedFont] ?? 'font-serif';
   // A message becomes a full "letter" (no truncation, generous paragraph
   // spacing) once it's long enough that a single flowing line would feel
   // cramped — matches the "ОЧЕНЬ ДЛИННЫЙ ТЕКСТ" treatment in the prototype.
@@ -199,6 +205,33 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
   // printed photo would — rather than at the bottom of the whole card.
   const photoReaction = media ? (row.reaction_emoji ?? null) : null;
   const textReaction = !media ? (row.reaction_emoji ?? null) : null;
+  const shouldFrameText = !media && typeof row.style?.frame === 'string';
+  const darkFrame = ['stars', 'neon', 'pixel', 'moonlit'].includes(frame);
+  const textColorClass = shouldFrameText
+    ? (darkFrame ? 'text-[#F4EAF0]' : 'text-ink')
+    : (zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-ink');
+
+  const textNode = text && (isLongLetter ? (
+    <div className={`mx-auto max-w-[380px] space-y-5 ${textColorClass}`}>
+      <div className="text-center text-[11px] uppercase tracking-[2px] opacity-45">без ограничения</div>
+      {text.split(/\n{2,}|\n/).filter(Boolean).map((para, i) => (
+        <p key={i} className={`whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[21px] leading-[1.75]`}>{para}</p>
+      ))}
+    </div>
+  ) : (
+    <div className={isSpecial ? 'mx-auto max-w-[390px] text-center' : ''}>
+      <p className={`whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${textColorClass} ${isSpecial ? 'text-[27px] italic' : ''}`}>{text}</p>
+      {row.display_text && row.original_text && row.display_text !== row.original_text && <details className="mt-5 text-[11px] opacity-45"><summary className="cursor-pointer">оригинал</summary><p className="mt-2 whitespace-pre-wrap font-sans">{row.original_text}</p></details>}
+      {textReaction && <div className="mt-4 text-sm opacity-50">{textReaction}</div>}
+      {isSpecial && <div className="mt-5 text-lg text-gold/70">♡</div>}
+    </div>
+  ));
+  // Text-only frames used to be ignored entirely. Apply an explicitly chosen
+  // frame to the text as well; unstyled imported messages keep the flowing
+  // book layout instead of being forced into cards.
+  const framedTextNode = textNode && shouldFrameText
+    ? <Frame frame={frame}><div className="rounded-[14px] p-4">{textNode}</div></Frame>
+    : textNode;
 
   const content = (
     <article ref={ref} style={{ background: bgByZone[zone] ?? bgByZone.default }} className="relative overflow-hidden py-8 transition-[background] duration-[1800ms]">
@@ -210,26 +243,14 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
         <div className={`mb-4 flex items-center gap-2 text-[10px] uppercase tracking-[1.8px] ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-white/60' : 'text-burgundy/55'}`}>
           <time>{wallClockDate(row.occurred_at, effectiveTimeFormat)}</time>{effectiveTimeFormat !== 'relative' && <><span>·</span><time>{wallClockTime(row.occurred_at, effectiveTimeFormat)}</time></>}{label && <><span>·</span><span>{label}</span></>}
         </div>
-        {title && <h3 className={`mb-4 text-center font-serif text-2xl ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-burgundy'}`}>{title}</h3>}
-        {media && <motion.div style={{ y: parallaxY }} className="mb-8">
-          <Frame frame={frame}><ReaderMedia row={row} token={token} /></Frame>
-          {photoReaction && <div className="mt-3 text-center font-script text-lg opacity-70">{photoReaction}</div>}
-        </motion.div>}
-        {text && (isLongLetter ? (
-          <div className={`mx-auto max-w-[380px] space-y-5 ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-ink'}`}>
-            <div className="text-center text-[11px] uppercase tracking-[2px] opacity-45">без ограничения</div>
-            {text.split(/\n{2,}|\n/).filter(Boolean).map((para, i) => (
-              <p key={i} className={`whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[21px] leading-[1.75]`}>{para}</p>
-            ))}
-          </div>
-        ) : (
-          <div className={isSpecial ? 'mx-auto max-w-[390px] text-center' : ''}>
-            <p className={`whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-ink'} ${isSpecial ? 'text-[27px] italic text-burgundy' : ''}`}>{text}</p>
-            {row.display_text && row.original_text && row.display_text !== row.original_text && <details className="mt-5 text-[11px] opacity-45"><summary className="cursor-pointer">оригинал</summary><p className="mt-2 whitespace-pre-wrap font-sans">{row.original_text}</p></details>}
-            {textReaction && <div className="mt-4 text-sm opacity-50">{textReaction}</div>}
-            {isSpecial && <div className="mt-5 text-lg text-gold/70">♡</div>}
-          </div>
-        ))}
+        {title && !isInteractive && <h3 className={`mb-4 text-center font-serif text-2xl ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-burgundy'}`}>{title}</h3>}
+        {isInteractive && text ? <InteractiveMoment kind={interactionKind} title={title} text={text} row={row} token={token} dark={zone === 'night' || zone === 'burgundy' || zone === 'dusk'} fontClass={fontOverride ?? 'font-serif'} /> : <>
+          {media && <motion.div style={{ y: parallaxY }} className="mb-8">
+            <Frame frame={frame}><ReaderMedia row={row} token={token} /></Frame>
+            {photoReaction && <div className="mt-3 text-center font-script text-lg opacity-70">{photoReaction}</div>}
+          </motion.div>}
+          {framedTextNode}
+        </>}
       </div>
     </article>
   );

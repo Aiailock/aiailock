@@ -27,11 +27,13 @@ export const DEFAULT_TIME_FORMAT: TimeFormatId = 'default';
 export interface ReaderDisplaySettings {
   specialMomentLabel: string;
   timeFormat: TimeFormatId;
+  readerFont: string;
 }
 
 export const ReaderSettingsContext = createContext<ReaderDisplaySettings>({
   specialMomentLabel: DEFAULT_SPECIAL_MOMENT_LABEL,
   timeFormat: DEFAULT_TIME_FORMAT,
+  readerFont: 'serif',
 });
 
 export function useReaderSettings() {
@@ -42,5 +44,6 @@ export function readDisplaySettingsFromTheme(theme: Record<string, unknown> | un
   const label = typeof theme?.specialMomentLabel === 'string' && theme.specialMomentLabel.trim() ? theme.specialMomentLabel.trim() : DEFAULT_SPECIAL_MOMENT_LABEL;
   const formatRaw = typeof theme?.timeFormat === 'string' ? theme.timeFormat : DEFAULT_TIME_FORMAT;
   const timeFormat = TIME_FORMAT_OPTIONS.some((o) => o.id === formatRaw) ? (formatRaw as TimeFormatId) : DEFAULT_TIME_FORMAT;
-  return { specialMomentLabel: label, timeFormat };
+  const readerFont = typeof theme?.readerFont === 'string' && theme.readerFont ? theme.readerFont : 'serif';
+  return { specialMomentLabel: label, timeFormat, readerFont };
 }

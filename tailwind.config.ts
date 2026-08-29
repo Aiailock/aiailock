@@ -7,14 +7,14 @@ export default {
   theme: {
     extend: {
       colors: {
-        cream: '#FBF3EE',
-        blush: '#F2C9C2',
-        peach: '#F0B79A',
-        lavender: '#C8BFE7',
-        burgundy: '#4A1B2F',
-        gold: '#C9A063',
-        ink: '#3A2E30',
-        paper: '#F6EFE0',
+        cream: 'rgb(from var(--cream) r g b / <alpha-value>)',
+        blush: 'rgb(from var(--blush) r g b / <alpha-value>)',
+        peach: 'rgb(from var(--peach) r g b / <alpha-value>)',
+        lavender: 'rgb(from var(--lavender) r g b / <alpha-value>)',
+        burgundy: 'rgb(from var(--burgundy) r g b / <alpha-value>)',
+        gold: 'rgb(from var(--gold) r g b / <alpha-value>)',
+        ink: 'rgb(from var(--ink) r g b / <alpha-value>)',
+        paper: 'rgb(from var(--paper) r g b / <alpha-value>)',
         night: {
           DEFAULT: '#2C2140',
           deep: '#1F1730',
@@ -35,6 +35,13 @@ export default {
         script: ['"Caveat"', 'cursive'],
         pixel: ['"Press Start 2P"', 'monospace'],
         mono: ['"VT323"', 'monospace'],
+        literata: ['"Literata"', 'serif'],
+        yeseva: ['"Yeseva One"', 'serif'],
+        comfort: ['"Comfortaa"', 'sans-serif'],
+        badscript: ['"Bad Script"', 'cursive'],
+        marck: ['"Marck Script"', 'cursive'],
+        pacifico: ['"Pacifico"', 'cursive'],
+        neucha: ['"Neucha"', 'cursive'],
       },
       maxWidth: {
         page: '430px',

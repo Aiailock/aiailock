@@ -19,6 +19,7 @@ function tokenLooksFresh(token: string): boolean {
 }
 
 export default function ReaderPage() {
+  const isPreview = new URLSearchParams(window.location.search).get('preview') === '1';
   const [title, setTitle] = useState('Для тебя');
   const [requiresPassword, setRequiresPassword] = useState(false);
   const [token, setToken] = useState<string | null>(null);
@@ -30,7 +31,6 @@ export default function ReaderPage() {
 
   useEffect(() => {
     let cancelled = false;
-    const preview = new URLSearchParams(window.location.search).get('preview') === '1';
     async function boot() {
       try {
         const settings = await fetchReaderSettings();
@@ -49,7 +49,7 @@ export default function ReaderPage() {
         const saved = localStorage.getItem(TOKEN_KEY);
         if (saved && tokenLooksFresh(saved)) {
           if (!cancelled) setToken(saved);
-        } else if (preview) {
+        } else if (isPreview) {
           const accessToken = await requestReaderAccess('', true);
           if (!cancelled) { localStorage.setItem(TOKEN_KEY, accessToken); setToken(accessToken); }
         } else if (!settings.reader_requires_password) {
@@ -64,7 +64,7 @@ export default function ReaderPage() {
     }
     void boot();
     return () => { cancelled = true; };
-  }, []);
+  }, [isPreview]);
 
   async function unlock() {
     setCheckingPassword(true);
@@ -103,7 +103,7 @@ export default function ReaderPage() {
   const empty = token === 'empty';
   const petals = Array.from({ length: 7 }, (_, index) => ({ left: `${10 + index * 13}%`, delay: `${index * 1.7}s`, duration: `${14 + (index % 3) * 4}s`, size: `${6 + (index % 3) * 2}px` }));
   return (
-    <main className="relative min-h-screen overflow-hidden bg-cream text-ink">
+    <main className="reader-shell relative min-h-screen overflow-hidden bg-cream text-ink">
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-10 overflow-hidden">
         {petals.map((petal, index) => <svg key={index} className="petal absolute top-[-5vh] opacity-40" style={{ left: petal.left, animationDelay: petal.delay, animationDuration: petal.duration, width: petal.size, height: petal.size }} viewBox="0 0 20 20"><path d="M10 1C15 4 18 8 10 18C2 8 5 4 10 1Z" fill="currentColor"/></svg>)}
       </div>
@@ -122,7 +122,7 @@ export default function ReaderPage() {
               <br />Но место для неё уже есть.</p>
           </div>
         </section>
-      ) : <ReaderSettingsContext.Provider value={displaySettings}><TimelineStory token={token} /></ReaderSettingsContext.Provider>}
+      ) : <ReaderSettingsContext.Provider value={displaySettings}><TimelineStory token={token} track={!isPreview} /></ReaderSettingsContext.Provider>}
       <div className="px-6 pb-20 pt-8 text-center">
         <div className="mx-auto h-px w-16 bg-gold/45" />
         <p className="mt-4 font-script text-2xl text-burgundy/55">история продолжается</p>

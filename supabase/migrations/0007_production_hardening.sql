@@ -39,7 +39,7 @@ begin
   else
     update history_settings
       set reader_requires_password = true,
-          reader_password_hash = crypt(p_password, gen_salt('bf', 10)),
+          reader_password_hash = extensions.crypt(p_password, extensions.gen_salt('bf', 10)),
           updated_at = now()
     where id = true;
   end if;
@@ -64,7 +64,7 @@ as $$
       from history_settings
       where id = true
         and reader_password_hash is not null
-        and crypt(coalesce(p_password, ''), reader_password_hash) = reader_password_hash
+        and extensions.crypt(coalesce(p_password, ''), reader_password_hash) = reader_password_hash
     )
   end;
 $$;

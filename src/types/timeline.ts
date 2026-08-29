@@ -52,9 +52,13 @@ export interface Message {
 }
 
 // Suggested/applied visual treatment for a timeline element. `frame` values
-// correspond 1:1 to the frame-* classes in the approved visual prototype
-// (polaroid, gold, flowers, branches, stars, ribbon, minimal, washi, ticket,
-// film, heart, sepia, wood, neon, pixel).
+// correspond to the frame-* renderers in StoryElement.tsx: the original
+// approved set (polaroid, gold, flowers, branches, stars, ribbon, minimal,
+// washi, ticket, film, heart, sepia, wood, neon, pixel) plus newer ideas
+// (hearts, garland, postcard, wax-seal, torn).
+//
+// `decoration` drives EffectsLayer.tsx and can combine any of: petals,
+// confetti, snow, rain, pixel-hearts, fireflies, stardust.
 export interface ElementStyle {
   frame?: string;
   background?: string;

@@ -1,24 +1,25 @@
+```ts
 // ============================================================================
-// server/media/thumbnail.ts — decodes a photo and produces a small jpeg
-// thumbnail + real width/height, using imagescript (pure WASM, no native
-// deps — the same reason fflate was chosen for zip: it works unmodified
-// under Deno's edge function runtime, no system libraries to install).
+// server/media/thumbnail.ts
 //
-// DENO-ONLY. Uses a top-level `npm:` specifier, so this file can only be
-// imported from supabase/functions/import-zip/index.ts (Deno), never from
-// Node/Vite. Kept in server/media/ (not supabase/functions/_shared/) purely
-// so it sits next to the rest of the media engine's logic; the npm: import
-// still resolves fine from there since Deno resolves specifiers by string,
-// not by directory.
+// DENO-ONLY.
+// Creates a small JPEG thumbnail and returns the original image dimensions.
 //
-// Only jpg/jpeg/png are decoded (see mime.ts -> isDecodableImage). webp
-// stickers and heic photos are stored as-is without a generated thumbnail —
-// an honest, documented gap for this stage (see MEDIA_ENGINE_NOTES in
-// import-zip/index.ts), not a silent failure: the reader can always fall
-// back to the full image when thumbnail_path is null.
+// IMPORTANT:
+// Do NOT use ImageScript here. ImageScript 1.3.0 loads Node-specific codecs
+// inside Supabase Edge Runtime and causes:
+//
+//   unsupported arch/platform: Not supported
+//
+// This implementation uses ImageMagick WASM, which is compatible with the
+// Supabase/Deno Edge Runtime.
 // ============================================================================
 
-import { Image } from 'npm:imagescript@1.3.0';
+import {
+  ImageMagick,
+  MagickFormat,
+  MagickGeometry,
+} from "npm:@imagemagick/magick-wasm@0.0.31";
 
 export interface ThumbnailResult {
   width: number;
@@ -28,16 +29,45 @@ export interface ThumbnailResult {
 
 const THUMBNAIL_MAX_WIDTH = 480;
 
-export async function makeThumbnail(bytes: Uint8Array): Promise<ThumbnailResult> {
-  const image = await Image.decode(bytes);
-  const width = image.width;
-  const height = image.height;
+export async function makeThumbnail(
+  bytes: Uint8Array,
+): Promise<ThumbnailResult> {
+  let result: ThumbnailResult | null = null;
 
-  if (width > THUMBNAIL_MAX_WIDTH) {
-    const scaledHeight = Math.round((height / width) * THUMBNAIL_MAX_WIDTH);
-    image.resize(THUMBNAIL_MAX_WIDTH, scaledHeight);
+  await ImageMagick.read(bytes, (image) => {
+    const width = image.width;
+    const height = image.height;
+
+    // Keep aspect ratio.
+    if (width > THUMBNAIL_MAX_WIDTH) {
+      const scaledHeight = Math.round(
+        (height / width) * THUMBNAIL_MAX_WIDTH,
+      );
+
+      image.resize(
+        new MagickGeometry(
+          THUMBNAIL_MAX_WIDTH,
+          scaledHeight,
+        ),
+      );
+    }
+
+    image.format = MagickFormat.Jpeg;
+    image.quality = 80;
+
+    image.write((thumbnailBytes) => {
+      result = {
+        width,
+        height,
+        thumbnailBytes: new Uint8Array(thumbnailBytes),
+      };
+    });
+  });
+
+  if (!result) {
+    throw new Error("Failed to create image thumbnail");
   }
 
-  const thumbnailBytes = await image.encodeJPEG(80);
-  return { width, height, thumbnailBytes };
+  return result;
 }
+```

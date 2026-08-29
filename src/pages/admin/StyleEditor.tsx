@@ -3,6 +3,7 @@ import { Sparkles } from 'lucide-react';
 import { Frame, bgByZone } from '@/components/reader/StoryElement';
 import EffectsLayer from '@/components/reader/EffectsLayer';
 import { DECORATION_OPTIONS, FONT_OPTIONS, FRAME_OPTIONS, ZONE_OPTIONS } from '@/lib/styleOptions';
+import { TIME_FORMAT_OPTIONS } from '@/lib/readerSettingsContext';
 
 export interface StyleValue {
   frame?: string;
@@ -10,6 +11,9 @@ export interface StyleValue {
   decoration?: string[];
   font?: string;
   gifUrl?: string;
+  // Переопределяет глобальный формат даты/времени (Admin → Настройки) только
+  // для этого элемента истории. Пусто/отсутствует — берётся общий формат.
+  timeFormat?: string;
   [key: string]: unknown;
 }
 
@@ -30,6 +34,7 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
   const font = value.font ?? '';
   const decoration = value.decoration ?? [];
   const gifUrl = value.gifUrl ?? '';
+  const timeFormat = typeof value.timeFormat === 'string' ? value.timeFormat : '';
 
   function patch(next: Partial<StyleValue>) {
     const merged = { ...value, ...next };
@@ -70,6 +75,13 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
           <span className="opacity-60">Шрифт текста</span>
           <select value={font} onChange={(e) => patch({ font: e.target.value || undefined })} className="mt-1 w-full rounded-lg border p-2 text-sm">
             {FONT_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        </label>
+        <label className="block text-xs">
+          <span className="opacity-60">Формат даты/времени именно здесь</span>
+          <select value={timeFormat} onChange={(e) => patch({ timeFormat: e.target.value || undefined })} className="mt-1 w-full rounded-lg border p-2 text-sm">
+            <option value="">Как в общих настройках</option>
+            {TIME_FORMAT_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label} — {o.hint}</option>)}
           </select>
         </label>
         <div className="text-xs">

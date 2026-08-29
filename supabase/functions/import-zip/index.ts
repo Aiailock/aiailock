@@ -35,11 +35,20 @@
 //     project before relying on it (README → "Как проверить медиа-движок").
 //
 // Deploy: `supabase functions deploy import-zip`
-// Invoke (from the authenticated admin session):
-//   const form = new FormData();
-//   form.append('file', zipFile);
-//   form.append('reader_starts_at', isoDateString); // only needed on the very first import
-//   const { data, error } = await supabase.functions.invoke('import-zip', { body: form });
+// Invoke (from the authenticated admin session) — the admin client uploads
+// the file straight to the private `originals` bucket first (see
+// AdminDashboard.tsx submit()), then calls this function with a small JSON
+// body pointing at that upload — the raw bytes never pass through this
+// function's request body:
+//   const storagePath = `imports/pending/${crypto.randomUUID()}-${safeName}`;
+//   await supabase.storage.from('originals').upload(storagePath, file, {...});
+//   const { data, error } = await supabase.functions.invoke('import-zip', {
+//     body: { storagePath, fileName: file.name, fileSize: file.size,
+//             reader_starts_at: isoDateString }, // reader_starts_at only needed on the very first import
+//   });
+// Accepts either a WhatsApp ZIP export (with media) or a plain .txt chat
+// export (text only — every media reference becomes a "missing" placeholder
+// to fill in manually later, see readWhatsAppExport() in _shared/zip.ts).
 // ============================================================================
 
 // deno-lint-ignore-file no-explicit-any
@@ -52,7 +61,7 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
 import { corsHeaders } from '../_shared/cors.ts';
 import { assertAdmin, serviceClient, HttpError } from '../_shared/db.ts';
-import { readWhatsAppZip } from '../_shared/zip.ts';
+import { readWhatsAppExport } from '../_shared/zip.ts';
 import { parseAndFingerprint } from '../../../server/parser/index.ts';
 import type { FingerprintedMessage, MediaKind } from '../../../server/parser/types.ts';
 import { bucketForKind, buildStoragePath, buildThumbnailPath } from '../../../server/media/paths.ts';
@@ -176,26 +185,37 @@ async function insertMessagesResilient(
 async function processImport(
   db: ReturnType<typeof serviceClient>,
   importId: string,
-  file: File,
+  fileName: string,
   bytes: Uint8Array,
-  startDateRaw: FormDataEntryValue | null,
+  startDateRaw: string | null,
   log: LogStep[],
 ): Promise<void> {
   try {
     // Keep the raw archive so Stage 3 (media engine) or a future re-parse
-    // doesn't require the admin to re-upload it.
-    const originalPath = `imports/${importId}/${file.name}`;
+    // doesn't require the admin to re-upload it. (The admin client already
+    // uploaded the original bytes to originals/imports/pending/... before
+    // calling this function — this copies them to their permanent,
+    // import-scoped path so the pending upload can be cleaned up later.)
+    const originalPath = `imports/${importId}/${fileName}`;
     const { error: uploadError } = await db.storage
       .from('originals')
-      .upload(originalPath, bytes, { contentType: 'application/zip', upsert: true });
+      .upload(originalPath, bytes, {
+        contentType: fileName.toLowerCase().endsWith('.txt') ? 'text/plain' : 'application/zip',
+        upsert: true,
+      });
     log.push(
       uploadError
         ? logStep('store-original', 'warning', `Не удалось сохранить копию архива: ${uploadError.message}`)
         : logStep('store-original', 'ok', `Архив сохранён в Storage: ${originalPath}.`),
     );
 
-    const archive = readWhatsAppZip(bytes);
-    log.push(logStep('unzip', 'ok', `Архив распакован, файл переписки: ${archive.chatFileName}.`));
+    const archive = readWhatsAppExport(bytes, fileName);
+    const isTxtOnly = archive.mediaFileNames.size === 0 && fileName.toLowerCase().endsWith('.txt');
+    log.push(
+      isTxtOnly
+        ? logStep('unzip', 'ok', `Загружен текстовый файл переписки без медиа: ${archive.chatFileName}. Все вложения будут отмечены как отсутствующие — их можно будет добавить вручную (Скриншоты/Воспоминания) или доимпортировать позже полным ZIP-экспортом с медиа.`)
+        : logStep('unzip', 'ok', `Архив распакован, файл переписки: ${archive.chatFileName}.`),
+    );
 
     const { messages: allMessages, warnings, format } = await parseAndFingerprint(archive.chatText);
     if (format.format === 'unknown' || allMessages.length === 0) {
@@ -502,20 +522,39 @@ Deno.serve(async (req: Request) => {
   try {
     await assertAdmin(req);
 
-    const form = await req.formData();
-    const file = form.get('file');
-    const startDateRaw = form.get('reader_starts_at');
+    // The admin client uploads the archive/txt straight to the private
+    // `originals` bucket first (large files would otherwise have to be
+    // buffered into this function's request body, which both risks the
+    // Edge Function memory limit and the platform's request wall-clock
+    // limit — see AdminDashboard.tsx submit()). This function is then
+    // called with a small JSON body pointing at that upload, not the file
+    // bytes themselves.
+    let payload: { storagePath?: unknown; fileName?: unknown; fileSize?: unknown; reader_starts_at?: unknown };
+    try {
+      payload = await req.json();
+    } catch {
+      throw new HttpError(400, 'Ожидался JSON-body с полями storagePath и fileName.');
+    }
+    const { storagePath, fileName } = payload;
+    const startDateRaw = typeof payload.reader_starts_at === 'string' ? payload.reader_starts_at : null;
 
-    if (!(file instanceof File)) {
-      throw new HttpError(400, 'Не передан файл архива (поле "file").');
+    if (typeof storagePath !== 'string' || !storagePath) {
+      throw new HttpError(400, 'Не передан storagePath — путь загруженного файла в бакете originals.');
+    }
+    if (typeof fileName !== 'string' || !fileName) {
+      throw new HttpError(400, 'Не передано fileName.');
     }
 
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const log: LogStep[] = [logStep('received', 'ok', `Получен файл ${file.name} (${bytes.byteLength} байт).`)];
+    const { data: downloaded, error: downloadError } = await db.storage.from('originals').download(storagePath);
+    if (downloadError || !downloaded) {
+      throw new HttpError(400, `Не удалось прочитать загруженный файл из Storage (${storagePath}): ${downloadError?.message ?? 'файл не найден'}.`);
+    }
+    const bytes = new Uint8Array(await downloaded.arrayBuffer());
+    const log: LogStep[] = [logStep('received', 'ok', `Получен файл ${fileName} (${bytes.byteLength} байт) из ${storagePath}.`)];
 
     const { data: importRow, error: importInsertError } = await db
       .from('imports')
-      .insert({ file_name: file.name, file_size_bytes: bytes.byteLength, status: 'processing', log })
+      .insert({ file_name: fileName, file_size_bytes: bytes.byteLength, status: 'processing', log })
       .select('id')
       .single();
     if (importInsertError || !importRow) {
@@ -527,7 +566,7 @@ Deno.serve(async (req: Request) => {
     // progress/completion instead of waiting on this HTTP call, which
     // would otherwise be killed by the platform's request wall-clock
     // limit on any sufficiently large export (many photos/videos).
-    EdgeRuntime.waitUntil(processImport(db, importId, file, bytes, startDateRaw, log));
+    EdgeRuntime.waitUntil(processImport(db, importId, fileName, bytes, startDateRaw, log));
 
     return json({ importId, status: 'processing', async: true, log });
   } catch (err) {

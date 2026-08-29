@@ -14,7 +14,7 @@ const moodLabel: Record<string, string> = {
   romantic: 'любовь', sad: 'тихая грусть', funny: 'улыбка', deep: 'важная мысль', night: 'ночь', memory: 'память', important: 'важное', hopeful: 'надежда', normal: '', neutral: '',
 };
 
-const bgByZone: Record<string, string> = {
+export const bgByZone: Record<string, string> = {
   default: 'linear-gradient(180deg,#FBF3EE,#F7E6E0)',
   romantic: 'linear-gradient(180deg,#FFF5F4,#F2C9C2)',
   night: 'linear-gradient(180deg,#2C2140,#1F1730)',
@@ -35,6 +35,10 @@ function wallClockTime(value: string) {
 }
 function year(value: string) { return Number(new Intl.DateTimeFormat('en', { year: 'numeric', timeZone: 'UTC' }).format(new Date(value))); }
 
+const fontClassByOption: Record<string, string> = {
+  serif: 'font-serif', script: 'font-script', sans: 'font-sans', pixel: 'font-pixel', mono: 'font-mono',
+};
+
 function zoneOf(row: PublicTimelineRow) {
   const explicit = typeof row.style?.zone === 'string' ? row.style.zone : '';
   if (explicit) return explicit;
@@ -54,7 +58,7 @@ function HeartCorners() {
   ))}</>;
 }
 
-function Frame({ frame, children }: { frame: string; children: React.ReactNode }) {
+export function Frame({ frame, children }: { frame: string; children: React.ReactNode }) {
   const common = 'relative mx-auto w-full overflow-visible transition-transform duration-700';
   switch (frame) {
     case 'polaroid': return <div className={`${common} max-w-[290px] rotate-[-2deg] bg-white p-3 pb-10 shadow-[0_18px_45px_-22px_rgba(74,27,47,.55)]`}><div className="overflow-hidden">{children}</div></div>;
@@ -114,6 +118,7 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
   const media = Boolean(row.media_id || row.screenshot_id || row.memory_photo_storage_path);
   const isSpecial = row.type === 'special' || row.metadata?.kind === 'special';
   const decoration = Array.isArray(row.style?.decoration) ? (row.style?.decoration as string[]) : null;
+  const fontOverride = typeof row.style?.font === 'string' ? fontClassByOption[row.style.font as string] : null;
   // A message becomes a full "letter" (no truncation, generous paragraph
   // spacing) once it's long enough that a single flowing line would feel
   // cramped — matches the "ОЧЕНЬ ДЛИННЫЙ ТЕКСТ" treatment in the prototype.
@@ -140,12 +145,12 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
           <div className={`mx-auto max-w-[380px] space-y-5 ${zone === 'night' || zone === 'burgundy' ? 'text-[#F4EAF0]' : 'text-ink'}`}>
             <div className="text-center text-[11px] uppercase tracking-[2px] opacity-45">без ограничения</div>
             {text.split(/\n{2,}|\n/).filter(Boolean).map((para, i) => (
-              <p key={i} className="whitespace-pre-wrap font-serif text-[21px] leading-[1.75]">{para}</p>
+              <p key={i} className={`whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[21px] leading-[1.75]`}>{para}</p>
             ))}
           </div>
         ) : (
           <div className={isSpecial ? 'mx-auto max-w-[390px] text-center' : ''}>
-            <p className={`whitespace-pre-wrap font-serif text-[23px] leading-[1.58] sm:text-[25px] ${zone === 'night' || zone === 'burgundy' ? 'text-[#F4EAF0]' : 'text-ink'} ${isSpecial ? 'text-[27px] italic text-burgundy' : ''}`}>{text}</p>
+            <p className={`whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${zone === 'night' || zone === 'burgundy' ? 'text-[#F4EAF0]' : 'text-ink'} ${isSpecial ? 'text-[27px] italic text-burgundy' : ''}`}>{text}</p>
             {row.display_text && row.original_text && row.display_text !== row.original_text && <details className="mt-5 text-[11px] opacity-45"><summary className="cursor-pointer">оригинал</summary><p className="mt-2 whitespace-pre-wrap font-sans">{row.original_text}</p></details>}
             {textReaction && <div className="mt-4 text-sm opacity-50">{textReaction}</div>}
             {isSpecial && <div className="mt-5 text-lg text-gold/70">♡</div>}

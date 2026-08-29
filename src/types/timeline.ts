@@ -64,6 +64,7 @@ export interface ElementStyle {
   background?: string;
   decoration?: string[];
   animation?: string;
+  font?: string;
   zone?: 'default' | 'night' | 'burgundy' | 'pixel' | 'gif' | 'travel' | 'winter' | 'sepia' | 'rain' | 'romantic';
 }
 

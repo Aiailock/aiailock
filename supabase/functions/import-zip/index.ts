@@ -52,7 +52,22 @@ import { parseAndFingerprint } from '../../../server/parser/index.ts';
 import type { FingerprintedMessage, MediaKind } from '../../../server/parser/types.ts';
 import { bucketForKind, buildStoragePath, buildThumbnailPath } from '../../../server/media/paths.ts';
 import { guessMimeType, isDecodableImage } from '../../../server/media/mime.ts';
-import { makeThumbnail } from '../../../server/media/thumbnail.ts';
+// NOTE: thumbnail.ts pulls in npm:@imagemagick/magick-wasm at module load.
+// It is imported dynamically (see loadThumbnailer() below) instead of
+// statically here, so that if the WASM module fails to initialize in the
+// Edge Runtime, only thumbnail generation degrades — the whole function
+// (including plain ZIP/message import with no photos) does not crash at
+// boot with a 502 for every request.
+type Thumbnailer = typeof import('../../../server/media/thumbnail.ts')['makeThumbnail'];
+let thumbnailerPromise: Promise<Thumbnailer | null> | null = null;
+function loadThumbnailer(): Promise<Thumbnailer | null> {
+  if (!thumbnailerPromise) {
+    thumbnailerPromise = import('../../../server/media/thumbnail.ts')
+      .then((mod) => mod.makeThumbnail)
+      .catch(() => null);
+  }
+  return thumbnailerPromise;
+}
 
 interface LogStep {
   step: string;
@@ -289,10 +304,13 @@ Deno.serve(async (req: Request) => {
         const update: Record<string, unknown> = { status: 'stored', storage_path: storagePath, mime_type: mimeType, size_bytes: bytes.byteLength };
         if (kind === 'photo' && isDecodableImage(duplicate.mediaFilename)) {
           try {
-            const { width, height, thumbnailBytes } = await makeThumbnail(bytes);
-            const thumbPath = buildThumbnailPath(missingMedia.id);
-            const { error: thumbError } = await db.storage.from('thumbnails').upload(thumbPath, thumbnailBytes, { contentType: 'image/jpeg', upsert: true });
-            if (!thumbError) { update.thumbnail_path = thumbPath; update.width = width; update.height = height; }
+            const makeThumbnail = await loadThumbnailer();
+            if (makeThumbnail) {
+              const { width, height, thumbnailBytes } = await makeThumbnail(bytes);
+              const thumbPath = buildThumbnailPath(missingMedia.id);
+              const { error: thumbError } = await db.storage.from('thumbnails').upload(thumbPath, thumbnailBytes, { contentType: 'image/jpeg', upsert: true });
+              if (!thumbError) { update.thumbnail_path = thumbPath; update.width = width; update.height = height; }
+            }
           } catch { /* original upload is still useful */ }
         }
         await db.from('media').update(update).eq('id', missingMedia.id);
@@ -375,6 +393,8 @@ Deno.serve(async (req: Request) => {
 
           if (kind === 'photo' && isDecodableImage(filename)) {
             try {
+              const makeThumbnail = await loadThumbnailer();
+              if (!makeThumbnail) throw new Error('thumbnailer unavailable');
               const { width, height, thumbnailBytes } = await makeThumbnail(bytes);
               const thumbPath = buildThumbnailPath(mediaInserted.id);
               const { error: thumbUploadError } = await db.storage

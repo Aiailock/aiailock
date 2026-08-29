@@ -53,6 +53,31 @@ body {
   transform: translateY(0);
 }
 
+/* Decorative particle effects (see src/components/reader/EffectsLayer.tsx).
+   Ported 1:1 from reader-prototype.html's petal/confetti/snow/rain systems,
+   plus two new ideas (fireflies, stardust) not in the original prototype. */
+.petal { position: absolute; top: -5vh; z-index: 0; opacity: 0.55; animation: fall linear infinite; }
+.confetti { position: absolute; top: -5vh; width: 8px; height: 14px; opacity: 0.85; animation: fall linear infinite; border-radius: 2px; }
+.snow { position: absolute; top: -5vh; border-radius: 50%; background: #fff; opacity: 0.8; animation: fall linear infinite; }
+.rain-drop { position: absolute; top: -10vh; width: 1.5px; height: 46px; background: linear-gradient(180deg, rgba(255,255,255,0), rgba(220,235,245,0.6)); animation: fall-fast linear infinite; }
+.pixel-heart { position: absolute; font-family: 'VT323', monospace; font-size: 18px; color: #FF6FB5; animation: pxbeat 1.4s steps(2) infinite; text-shadow: 0 0 0 #FF6FB5; image-rendering: pixelated; }
+.firefly { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #FFD86B; box-shadow: 0 0 6px 2px rgba(255, 216, 107, 0.8); animation: drift ease-in-out infinite; }
+.stardust { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #EDE6F5; box-shadow: 0 0 4px 1px rgba(237, 230, 245, 0.9); animation: twinkle ease-in-out infinite; }
+
+@keyframes fall-fast { to { transform: translateY(115vh); } }
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0); opacity: 0.2; }
+  50% { transform: translate(6px, -14px); opacity: 1; }
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.3); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .firefly, .stardust, .rain-drop, .snow { display: none; }
+}
+
 /* Final reader polish: keep the book narrow on desktop while preserving a fluid mobile canvas. */
 .reader-book { width: min(100%, 430px); margin-inline: auto; }
 .reader-silence { min-height: 16vh; }

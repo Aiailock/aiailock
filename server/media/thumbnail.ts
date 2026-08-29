@@ -1,4 +1,3 @@
-```ts
 // ============================================================================
 // server/media/thumbnail.ts
 //
@@ -70,4 +69,3 @@ export async function makeThumbnail(
 
   return result;
 }
-```

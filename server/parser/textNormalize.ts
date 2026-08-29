@@ -17,6 +17,9 @@
 // Zero-width / bidi-control characters WhatsApp is known to emit. Safe to
 // strip unconditionally: they are never meaningful message content for a
 // reader, only export-format plumbing.
+// Intentional: these are exactly the zero-width/bidi-control code points we
+// strip, not a visually-confusable grapheme cluster.
+// eslint-disable-next-line no-misleading-character-class
 const INVISIBLE_CONTROL_CHARS = /[\u200B\u200C\u200D\u200E\u200F\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069\uFEFF]/g;
 
 // Non-breaking / narrow-no-break spaces used before AM/PM on iOS exports —

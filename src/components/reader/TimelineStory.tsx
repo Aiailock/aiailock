@@ -398,7 +398,15 @@ export default function TimelineStory({ token, track = true }: { token: string; 
       lastReported.current = { id: elementId, progress };
       window.clearTimeout(reportTimer.current);
       reportTimer.current = window.setTimeout(() => {
-        void recordReaderAnalytics({ action: progress >= 99 ? 'complete' : 'progress', visitorId, visitId: visitId.current, elementId, position: meta.position, progress }, token);
+        void recordReaderAnalytics({
+          action: progress >= 99 ? 'complete' : 'progress',
+          visitorId,
+          visitId: visitId.current,
+          elementId,
+          position: meta.position,
+          progress,
+          chapter: meta.chapter,
+        }, token);
       }, 900);
     }, { threshold: [0.35, 0.65], rootMargin: '-12% 0px -18%' });
     elements.forEach((element) => observer.observe(element));

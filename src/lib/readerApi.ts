@@ -126,6 +126,86 @@ export async function fetchResumeTimeline(elementId: string, token: string): Pro
 
 export type ReaderAnalyticsAction = 'open' | 'progress' | 'complete';
 
+interface NavigatorConnection {
+  type?: string;
+  effectiveType?: string;
+  downlink?: number;
+  saveData?: boolean;
+}
+
+interface NavigatorWithDeviceHints extends Navigator {
+  deviceMemory?: number;
+  connection?: NavigatorConnection;
+  mozConnection?: NavigatorConnection;
+  webkitConnection?: NavigatorConnection;
+  standalone?: boolean;
+}
+
+function versioned(label: string, match: RegExpMatchArray | null): string | null {
+  return match?.[1] ? `${label} ${match[1].replace(/_/g, '.')}` : null;
+}
+
+function browserName(userAgent: string): string {
+  return versioned('Edge', userAgent.match(/Edg(?:A|iOS)?\/([\d.]+)/i))
+    ?? versioned('Samsung Internet', userAgent.match(/SamsungBrowser\/([\d.]+)/i))
+    ?? versioned('Яндекс Браузер', userAgent.match(/YaBrowser\/([\d.]+)/i))
+    ?? versioned('Opera', userAgent.match(/(?:OPR|Opera)\/([\d.]+)/i))
+    ?? versioned('Firefox', userAgent.match(/(?:Firefox|FxiOS)\/([\d.]+)/i))
+    ?? versioned('Chrome', userAgent.match(/(?:Chrome|CriOS)\/([\d.]+)/i))
+    ?? (userAgent.includes('Safari/') ? versioned('Safari', userAgent.match(/Version\/([\d.]+)/i)) : null)
+    ?? 'Не определён';
+}
+
+function osName(userAgent: string): string {
+  return versioned('Android', userAgent.match(/Android\s([\d.]+)/i))
+    ?? versioned('iOS', userAgent.match(/(?:iPhone OS|CPU OS)\s([\d_]+)/i))
+    ?? versioned('Windows', userAgent.match(/Windows NT\s([\d.]+)/i))
+    ?? versioned('macOS', userAgent.match(/Mac OS X\s([\d_]+)/i))
+    ?? (userAgent.includes('Linux') ? 'Linux' : 'Не определена');
+}
+
+function deviceModel(userAgent: string): string {
+  if (/iPad/i.test(userAgent)) return 'Apple iPad';
+  if (/iPhone/i.test(userAgent)) return 'Apple iPhone';
+  const android = userAgent.match(/Android[^;]*;\s*([^;)]+?)(?:\s+Build\/[^;)]+)?[;)]/i)?.[1]?.trim();
+  if (android && !/^(wv|[a-z]{2}-[A-Z]{2})$/.test(android)) return android;
+  return /Mobile|Android/i.test(userAgent) ? 'Мобильное устройство' : 'Компьютер';
+}
+
+function collectDeviceInfo(): Record<string, unknown> {
+  const extended = navigator as NavigatorWithDeviceHints;
+  const connection = extended.connection ?? extended.mozConnection ?? extended.webkitConnection;
+  const userAgent = navigator.userAgent;
+  const isTablet = /iPad|Tablet/i.test(userAgent) || (/Android/i.test(userAgent) && !/Mobile/i.test(userAgent));
+  const isMobile = /Mobile|iPhone|Android/i.test(userAgent);
+  return {
+    deviceType: isTablet ? 'Планшет' : isMobile ? 'Телефон' : 'Компьютер',
+    browser: browserName(userAgent),
+    os: osName(userAgent),
+    model: deviceModel(userAgent),
+    platform: navigator.platform || null,
+    language: navigator.language || null,
+    languages: navigator.languages ? Array.from(navigator.languages) : [],
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+    timezoneOffset: new Date().getTimezoneOffset(),
+    screenWidth: window.screen.width,
+    screenHeight: window.screen.height,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    pixelRatio: window.devicePixelRatio,
+    touchPoints: navigator.maxTouchPoints,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: extended.deviceMemory,
+    connectionType: connection?.type,
+    effectiveConnectionType: connection?.effectiveType,
+    downlinkMbps: connection?.downlink,
+    saveData: connection?.saveData,
+    colorScheme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'Тёмная' : 'Светлая',
+    displayMode: window.matchMedia('(display-mode: standalone)').matches || extended.standalone ? 'Приложение/PWA' : 'Браузер',
+    referrer: document.referrer || null,
+  };
+}
+
 export async function recordReaderAnalytics(input: {
   action: ReaderAnalyticsAction;
   visitorId: string;
@@ -133,12 +213,14 @@ export async function recordReaderAnalytics(input: {
   elementId?: string;
   position?: number;
   progress?: number;
+  chapter?: string;
 }, token: string): Promise<{ total: number | null }> {
   const { data, error } = await supabase.functions.invoke('reader-analytics', {
     body: {
       ...input,
       userAgent: input.action === 'open' ? navigator.userAgent : undefined,
       viewportWidth: input.action === 'open' ? window.innerWidth : undefined,
+      deviceInfo: input.action === 'open' ? collectDeviceInfo() : undefined,
     },
     headers: { 'x-reader-access-token': token },
   });

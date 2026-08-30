@@ -317,7 +317,12 @@ export async function preloadTimelineMedia(
 
   for (const row of rows) {
     const external = typeof row.style?.externalMediaUrl === 'string' ? row.style.externalMediaUrl : '';
-    if (/^https?:\/\//i.test(external)) tasks.set(`external:${external}`, () => warmImage(external));
+    const externalKind = typeof row.style?.externalMediaKind === 'string' ? row.style.externalMediaKind : '';
+    if (/^https?:\/\//i.test(external) && ['image', 'photo', 'gif'].includes(externalKind)) {
+      tasks.set(`external:${external}`, () => warmImage(external));
+    }
+    const externalCover = typeof row.metadata?.coverUrl === 'string' ? row.metadata.coverUrl : '';
+    if (/^https?:\/\//i.test(externalCover)) tasks.set(`cover:${externalCover}`, () => warmImage(externalCover));
 
     const input = readerMediaInput(row);
     if (!input) continue;

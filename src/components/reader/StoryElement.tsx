@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import { memo } from 'react';
+import { ExternalLink, Link2, Minimize2 } from 'lucide-react';
+import { memo, useState } from 'react';
 import type { PublicTimelineRow } from '@/lib/readerApi';
 import { prefersLiteReaderMotion, useReaderSettings, type DateStyleId, type TimeFormatId } from '@/lib/readerSettingsContext';
 import { safeRemoteUrl } from '@/lib/safeUrl';
@@ -194,9 +195,48 @@ function AnimatedWords({ text, className, reduced }: { text: string; className: 
 function StoryElement({ row, token, galleryRows }: { row: PublicTimelineRow; token: string; galleryRows?: PublicTimelineRow[] }) {
   const reducedMotion = useReducedMotion();
   const settings = useReaderSettings();
+  const [linkOpen, setLinkOpen] = useState(false);
   const { specialMomentLabel, timeFormat, readerFont } = settings;
   const liteMotion = Boolean(reducedMotion) || prefersLiteReaderMotion(settings.motionMode);
   const zone = zoneOf(row);
+
+  if (row.type === 'link') {
+    const url = safeRemoteUrl(row.metadata?.url);
+    const title = typeof row.metadata?.title === 'string' && row.metadata.title.trim()
+      ? row.metadata.title.trim()
+      : 'Открыть следующую страницу';
+    const description = typeof row.metadata?.description === 'string' ? row.metadata.description.trim() : '';
+    const openMode = row.metadata?.openMode === 'preview' ? 'preview' : 'external';
+    const host = url ? new URL(url).hostname.replace(/^www\./, '') : '';
+    const dateStyle = typeof row.style?.dateStyle === 'string' ? row.style.dateStyle as DateStyleId : settings.dateStyle;
+    const dateAlign = row.style?.dateAlign === 'center' || row.style?.dateAlign === 'right' ? row.style.dateAlign : settings.dateAlign;
+    const dateFont = typeof row.style?.dateFont === 'string' && row.style.dateFont ? row.style.dateFont : settings.dateFont;
+    const hideTime = typeof row.style?.hideTime === 'boolean' ? row.style.hideTime : settings.hideTime;
+    return <MotionWrap reduced={liteMotion}>
+      <section className="story-atmosphere relative w-full min-w-0 overflow-hidden py-12" style={{ background: bgByZone[zone] ?? bgByZone.default }}>
+        <div aria-hidden className="cinema-vignette absolute inset-0" />
+        <div className="relative mx-auto w-full max-w-page px-[22px]">
+          <DateStamp date={wallClockDate(row.occurred_at, timeFormat)} time={!hideTime && timeFormat !== 'relative' ? wallClockTime(row.occurred_at, timeFormat) : null} variant={dateStyle} align={dateAlign} font={dateFont} dark />
+          <div className="overflow-hidden rounded-[28px] border border-gold/20 bg-white/[.055] shadow-[0_22px_70px_-30px_rgba(0,0,0,.9)] backdrop-blur-sm">
+            <div className="p-5">
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[2.2px] text-gold/70"><Link2 size={14} /> переход</div>
+              <h3 className="mt-3 overflow-wrap-anywhere font-serif text-[29px] leading-tight text-[#F4EFE6]">{title}</h3>
+              {description && <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-white/55">{description}</p>}
+              {host && <div className="mt-4 truncate text-[11px] text-white/32">{host}</div>}
+              {!url ? <div className="mt-5 rounded-xl bg-red-950/35 p-3 text-xs text-red-100/70">Ссылка указана неверно.</div>
+                : openMode === 'preview' ? <button type="button" onClick={() => setLinkOpen((value) => !value)} aria-expanded={linkOpen} className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-gold px-5 py-3 text-xs font-medium text-[#171012] shadow-lg">{linkOpen ? <Minimize2 size={15} /> : <Link2 size={15} />}{linkOpen ? 'Свернуть окно' : 'Открыть здесь'}</button>
+                : <a href={url} target="_blank" rel="noopener noreferrer" className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-gold px-5 py-3 text-xs font-medium text-[#171012] shadow-lg">Перейти по ссылке <ExternalLink size={15} /></a>}
+            </div>
+            {url && openMode === 'preview' && linkOpen && <div className="border-t border-white/10 bg-white">
+              <iframe src={url} title={title} loading="lazy" referrerPolicy="no-referrer" sandbox="allow-forms allow-popups allow-scripts" className="h-[360px] w-full border-0 bg-white" />
+              <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 border-t border-black/10 px-4 py-3 text-xs text-burgundy">Если сайт не показался — открыть отдельно <ExternalLink size={13} /></a>
+            </div>}
+          </div>
+          <ReaderReaction elementId={row.element_id} token={token} dark />
+        </div>
+      </section>
+    </MotionWrap>;
+  }
 
   if (row.type === 'quote') {
     const quote = typeof row.metadata?.quote === 'string' ? row.metadata.quote : '';
@@ -234,8 +274,14 @@ function StoryElement({ row, token, galleryRows }: { row: PublicTimelineRow; tok
     ? row.memory_body ?? null
     : row.screenshot_id
     ? row.screenshot_caption ?? row.screenshot_description ?? null
-    : row.display_text ?? row.original_text;
-  const title = row.memory_id ? row.memory_title : row.screenshot_id ? row.screenshot_title : null;
+    : row.display_text ?? row.original_text ?? (typeof row.metadata?.body === 'string' ? row.metadata.body : null);
+  const title = row.memory_id
+    ? row.memory_title
+    : row.screenshot_id
+      ? row.screenshot_title
+      : typeof row.metadata?.title === 'string'
+        ? row.metadata.title
+        : null;
   const frame = typeof row.style?.frame === 'string' ? row.style.frame : 'minimal';
   const label = row.mood ? moodLabel[row.mood] : '';
   const externalMediaUrl = safeRemoteUrl(row.style?.externalMediaUrl);

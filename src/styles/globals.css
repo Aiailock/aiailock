@@ -126,6 +126,40 @@ body {
   animation: loader-ring-spin 1s linear infinite;
 }
 
+@keyframes vinyl-spin { to { transform: rotate(360deg); } }
+.vinyl-disc {
+  display: block;
+  background:
+    repeating-radial-gradient(circle, transparent 0 4px, rgba(255,255,255,.045) 5px 6px),
+    radial-gradient(circle at 35% 28%, #3d3840 0%, #171419 31%, #050506 74%);
+  box-shadow: 0 18px 42px -18px rgba(0,0,0,.95), inset 0 0 0 1px rgba(255,255,255,.07);
+  will-change: transform;
+}
+.vinyl-disc-playing { animation: vinyl-spin 4.8s linear infinite; }
+.vinyl-progress {
+  height: 3px;
+  appearance: none;
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  accent-color: var(--gold);
+}
+.vinyl-progress::-webkit-slider-thumb {
+  width: 13px;
+  height: 13px;
+  appearance: none;
+  border-radius: 999px;
+  background: var(--gold);
+  box-shadow: 0 0 0 4px rgba(201,160,99,.12);
+}
+.vinyl-progress::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--gold);
+  box-shadow: 0 0 0 4px rgba(201,160,99,.12);
+}
+
 /* New decoration: falling autumn leaves (forest / trees mood). */
 @keyframes leaf-fall {
   0% { transform: translateY(-5vh) translateX(0) rotate(0deg); }
@@ -162,6 +196,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .firefly, .stardust, .rain-drop, .snow, .leaf, .candle-glow, .gif-sprite { display: none; }
   .dusk-veil { animation: none; opacity: 1; }
+  .vinyl-disc-playing { animation: none; }
 }
 
 /* Final reader polish: keep the book narrow on desktop while preserving a fluid mobile canvas. */

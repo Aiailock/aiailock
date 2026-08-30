@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowRight, BookHeart, Check, ImagePlus, Layers3, Save, Sparkles, Trash2, WandSparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookHeart, Check, ImagePlus, Layers3, Link2, Music2, Save, Sparkles, Trash2, Video, WandSparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
+import { createManualAudio, createManualVideo, isAudioFile, MAX_MANUAL_AUDIO_BYTES, MAX_MANUAL_VIDEO_BYTES } from '@/lib/manualMedia';
+import { safeRemoteUrl } from '@/lib/safeUrl';
+import type { SongSearchResult } from '@/lib/songSearch';
+import SongSearch from '@/components/admin/SongSearch';
 import StyleEditor, { type StyleValue } from './StyleEditor';
 import { INTERACTION_OPTIONS } from '@/lib/styleOptions';
 
-type CreateKind = 'note' | 'memory' | 'special' | 'chapter' | 'quote' | 'pause' | 'album' | 'gif' | 'interactive';
+type CreateKind = 'note' | 'memory' | 'special' | 'chapter' | 'quote' | 'pause' | 'album' | 'gif' | 'video' | 'music' | 'link' | 'interactive';
 
 const KINDS: Array<{ id: CreateKind; label: string; hint: string }> = [
   { id: 'note', label: 'Запись', hint: 'Текст как новая страница дневника' },
@@ -15,6 +19,9 @@ const KINDS: Array<{ id: CreateKind; label: string; hint: string }> = [
   { id: 'pause', label: 'Пауза', hint: 'Воздух и тишина между сценами' },
   { id: 'album', label: 'Альбом', hint: 'Несколько скриншотов в одной сцене' },
   { id: 'gif', label: 'GIF', hint: 'Файл или ссылка между страницами' },
+  { id: 'video', label: 'Видео', hint: 'Файл до 200 МБ или прямая ссылка' },
+  { id: 'music', label: 'Музыка', hint: 'Найти песню или загрузить своё аудио' },
+  { id: 'link', label: 'Ссылка', hint: 'Переход или мини-окно прямо в истории' },
   { id: 'interactive', label: 'Сюрприз', hint: 'Подарок, письмо или секрет' },
 ];
 
@@ -37,6 +44,11 @@ interface Draft {
   visibleFrom: string;
   interaction: string;
   gifUrl: string;
+  externalUrl: string;
+  linkOpenMode: 'external' | 'preview';
+  musicMode: 'search' | 'upload';
+  artist: string;
+  selectedSong: SongSearchResult | null;
   albumLayout: string;
   reactionEmoji: string;
   reactionText: string;
@@ -48,7 +60,7 @@ interface Draft {
 
 const DRAFT_KEY = 'for-you-mobile-studio-draft-v1';
 const nowForInput = () => new Date().toISOString().slice(0, 16);
-const emptyDraft = (): Draft => ({ kind: 'note', title: '', body: '', occurredAt: nowForInput(), style: { dateStyle: 'line', spacing: 'normal', animation: 'fade-up' }, published: true, visibleFrom: '', interaction: 'gift', gifUrl: '', albumLayout: 'carousel', reactionEmoji: '❤', reactionText: '', optionA: 'Да', optionB: 'Очень', resultA: '', resultB: '' });
+const emptyDraft = (): Draft => ({ kind: 'note', title: '', body: '', occurredAt: nowForInput(), style: { dateStyle: 'line', spacing: 'normal', animation: 'fade-up' }, published: true, visibleFrom: '', interaction: 'gift', gifUrl: '', externalUrl: '', linkOpenMode: 'external', musicMode: 'search', artist: '', selectedSong: null, albumLayout: 'carousel', reactionEmoji: '❤', reactionText: '', optionA: 'Да', optionB: 'Очень', resultA: '', resultB: '' });
 
 function readDraft(): Draft {
   try {
@@ -89,6 +101,7 @@ async function uploadBatch(files: File[], folder: string): Promise<string[]> {
 export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCreated: () => void; onOpenTimeline: () => void }) {
   const [draft, setDraft] = useState<Draft>(readDraft);
   const [files, setFiles] = useState<File[]>([]);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const selectedKind = useMemo(() => KINDS.find((kind) => kind.id === draft.kind) ?? KINDS[0], [draft.kind]);
@@ -102,10 +115,17 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
   }, [draft]);
 
   function patch(next: Partial<Draft>) { setDraft((current) => ({ ...current, ...next })); setMessage(''); }
-  function reset() { const next = emptyDraft(); setDraft(next); setFiles([]); localStorage.removeItem(DRAFT_KEY); setMessage('Новый чистый черновик готов.'); }
+  function chooseKind(kind: CreateKind) {
+    if (kind !== draft.kind) { setFiles([]); setCoverFile(null); }
+    patch({ kind });
+  }
+  function reset() { const next = emptyDraft(); setDraft(next); setFiles([]); setCoverFile(null); localStorage.removeItem(DRAFT_KEY); setMessage('Новый чистый черновик готов.'); }
   function selectFiles(incoming: File[]) {
-    const valid = incoming.filter((file) => file.type.startsWith('image/') && file.size <= 20 * 1024 * 1024);
-    if (valid.length !== incoming.length) setMessage('Можно добавлять изображения до 20 МБ каждое. Неподходящие файлы пропущены.');
+    const isVideo = draft.kind === 'video';
+    const isAudio = draft.kind === 'music';
+    const maxBytes = isVideo ? MAX_MANUAL_VIDEO_BYTES : isAudio ? MAX_MANUAL_AUDIO_BYTES : 20 * 1024 * 1024;
+    const valid = incoming.filter((file) => (isVideo ? file.type.startsWith('video/') : isAudio ? isAudioFile(file) : file.type.startsWith('image/')) && file.size <= maxBytes);
+    if (valid.length !== incoming.length) setMessage(isVideo ? 'Можно добавить один видеофайл до 200 МБ.' : isAudio ? 'Можно добавить один аудиофайл до 25 МБ.' : 'Можно добавлять изображения до 20 МБ каждое. Неподходящие файлы пропущены.');
     setFiles((current) => {
       const source = draft.kind === 'album' ? [...current, ...valid] : valid.slice(0, 1);
       const unique = source.filter((file, index, all) => all.findIndex((candidate) => candidate.name === file.name && candidate.size === file.size && candidate.lastModified === file.lastModified) === index);
@@ -137,7 +157,80 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         style.externalMediaKind = 'gif';
       }
 
-      if (draft.kind === 'chapter') {
+      if (draft.kind === 'music') {
+        if (draft.musicMode === 'search') {
+          const song = draft.selectedSong;
+          const previewUrl = safeRemoteUrl(song?.previewUrl);
+          if (!song || !previewUrl) throw new Error('Найди и выбери песню из результатов.');
+          const { error } = await supabase.from('timeline_elements').insert({
+            type: 'audio', occurred_at: occurredAt, sort_tiebreak: 6,
+            style: { zone: 'night', frame: 'minimal', spacing: 'cinematic', ...style, externalMediaUrl: previewUrl, externalMediaKind: 'audio' },
+            ...visibility,
+            metadata: {
+              title: song.title,
+              artist: song.artist,
+              album: song.album || null,
+              coverUrl: safeRemoteUrl(song.artworkUrl),
+              sourceUrl: safeRemoteUrl(song.sourceUrl),
+              genre: song.genre || null,
+              durationMs: song.durationMs,
+              body: draft.body.trim() || null,
+              musicSource: 'search',
+            },
+          });
+          if (error) throw error;
+        } else {
+          if (!files[0]) throw new Error('Выбери аудиофайл.');
+          await createManualAudio({
+            file: files[0],
+            coverFile,
+            title: draft.title,
+            artist: draft.artist,
+            caption: draft.body,
+            occurredAt,
+            style: { zone: 'night', frame: 'minimal', spacing: 'cinematic', ...style },
+            published: visibility.is_published,
+            visibleFrom,
+          });
+        }
+      } else if (draft.kind === 'video') {
+        const externalUrl = safeRemoteUrl(draft.externalUrl);
+        if (files.length === 0 && !externalUrl) throw new Error('Выбери видеофайл или вставь прямую ссылку на видео.');
+        if (files[0]) {
+          await createManualVideo({
+            file: files[0],
+            title: draft.title,
+            caption: draft.body,
+            occurredAt,
+            style: { zone: 'default', frame: 'film', spacing: 'cinematic', ...style },
+            published: visibility.is_published,
+            visibleFrom,
+          });
+        } else {
+          const { error } = await supabase.from('timeline_elements').insert({
+            type: 'video', occurred_at: occurredAt, sort_tiebreak: 5,
+            style: { zone: 'default', frame: 'film', spacing: 'cinematic', ...style, externalMediaUrl: externalUrl, externalMediaKind: 'video' },
+            ...visibility,
+            metadata: { title: draft.title.trim() || null, body: draft.body.trim() || null },
+          });
+          if (error) throw error;
+        }
+      } else if (draft.kind === 'link') {
+        const url = safeRemoteUrl(draft.externalUrl);
+        if (!url) throw new Error('Вставь полную ссылку, начинающуюся с https:// или http://.');
+        const { error } = await supabase.from('timeline_elements').insert({
+          type: 'link', occurred_at: occurredAt, sort_tiebreak: 15,
+          style: { zone: 'dusk', spacing: 'cinematic', ...style },
+          ...visibility,
+          metadata: {
+            url,
+            title: draft.title.trim() || 'Открыть следующую страницу',
+            description: draft.body.trim() || null,
+            openMode: draft.linkOpenMode,
+          },
+        });
+        if (error) throw error;
+      } else if (draft.kind === 'chapter') {
         if (!draft.title.trim()) throw new Error('Напиши название главы.');
         const { count } = await supabase.from('timeline_elements').select('*', { count: 'exact', head: true }).eq('type', 'chapter');
         const { error } = await supabase.from('timeline_elements').insert({
@@ -224,6 +317,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
       localStorage.removeItem(DRAFT_KEY);
       setMessage('Готово — страница уже добавлена в историю. Можно сразу открыть Preview или продолжить редактирование.');
       setFiles([]);
+      setCoverFile(null);
       onCreated();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Не удалось добавить страницу.');
@@ -238,21 +332,31 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         <div className="flex items-start gap-3"><div className="rounded-2xl bg-burgundy p-3 text-white"><BookHeart size={20} /></div><div><div className="text-[10px] uppercase tracking-[2px] text-burgundy/45">mobile story studio</div><h1 className="font-serif text-3xl text-burgundy">Добавить страницу</h1><p className="mt-1 text-xs opacity-50">Дата уже стоит текущая. Черновик сохраняется в этом телефоне автоматически.</p></div></div>
 
         <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {KINDS.map((kind) => <button type="button" key={kind.id} onClick={() => patch({ kind: kind.id })} className={`min-w-0 rounded-2xl border p-3 text-left transition ${draft.kind === kind.id ? 'border-burgundy bg-burgundy text-white shadow-md' : 'border-black/10 bg-[#FBF8F5]'}`}><div className="text-sm font-medium">{kind.label}</div><div className="mt-1 text-[10px] leading-snug opacity-55">{kind.hint}</div></button>)}
+          {KINDS.map((kind) => <button type="button" key={kind.id} onClick={() => chooseKind(kind.id)} className={`min-w-0 rounded-2xl border p-3 text-left transition ${draft.kind === kind.id ? 'border-burgundy bg-burgundy text-white shadow-md' : 'border-black/10 bg-[#FBF8F5]'}`}><div className="text-sm font-medium">{kind.label}</div><div className="mt-1 text-[10px] leading-snug opacity-55">{kind.hint}</div></button>)}
         </div>
 
         <div className="mt-5 rounded-2xl bg-[#F6EFE0] p-3"><div className="flex items-center gap-2 text-xs font-medium text-burgundy"><WandSparkles size={14} /> Готовый стиль — без ручной настройки</div><div className="mt-2 flex flex-wrap gap-2">{PRESETS.map((preset) => <button type="button" key={preset.id} onClick={() => patch({ style: { ...draft.style, ...preset.style } })} className="rounded-full border border-burgundy/10 bg-white/70 px-3 py-1.5 text-[11px] text-burgundy">{preset.label}</button>)}</div></div>
 
         <input value={draft.title} onChange={(event) => patch({ title: event.target.value })} placeholder={draft.kind === 'chapter' ? 'Название главы' : draft.kind === 'quote' ? 'Автор или подпись (необязательно)' : 'Название (необязательно)'} className="mt-4 w-full rounded-xl border p-3" />
-        <textarea value={draft.body} onChange={(event) => patch({ body: event.target.value })} placeholder={draft.kind === 'chapter' ? 'Короткая фраза под названием' : draft.kind === 'quote' ? 'Та самая фраза…' : draft.kind === 'pause' ? 'Несколько тихих слов — или оставь пустым' : draft.kind === 'interactive' ? 'Что откроется после нажатия?' : draft.kind === 'album' ? 'Общая подпись к альбому' : 'Текст страницы'} className="mt-3 min-h-36 w-full rounded-xl border p-3" />
+        <textarea value={draft.body} onChange={(event) => patch({ body: event.target.value })} placeholder={draft.kind === 'chapter' ? 'Короткая фраза под названием' : draft.kind === 'quote' ? 'Та самая фраза…' : draft.kind === 'pause' ? 'Несколько тихих слов — или оставь пустым' : draft.kind === 'interactive' ? 'Что откроется после нажатия?' : draft.kind === 'album' ? 'Общая подпись к альбому' : draft.kind === 'video' ? 'Подпись под видео (необязательно)' : draft.kind === 'music' ? 'Почему эта песня здесь или подпись к аудио' : draft.kind === 'link' ? 'Коротко объясни, куда ведёт ссылка' : 'Текст страницы'} className="mt-3 min-h-36 w-full rounded-xl border p-3" />
         <input type="datetime-local" value={draft.occurredAt} onChange={(event) => patch({ occurredAt: event.target.value })} className="mt-3 w-full rounded-xl border p-3" />
 
-        {(draft.kind === 'memory' || draft.kind === 'special' || draft.kind === 'gif' || draft.kind === 'interactive' || draft.kind === 'album') && <div className="mt-3 rounded-xl border border-dashed border-burgundy/15 bg-[#FBF8F5] p-3 text-sm">
-          <label className="block cursor-pointer"><span className="flex items-center gap-2"><ImagePlus size={16} />{draft.kind === 'album' ? 'Скриншоты — выбирай сразу несколько или добавляй ещё' : draft.kind === 'gif' ? 'GIF-файл' : 'Фото или GIF (необязательно)'}</span><input type="file" multiple={draft.kind === 'album'} accept={draft.kind === 'gif' ? 'image/gif,.gif' : 'image/*,.gif'} onChange={(event) => { selectFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ''; }} className="mt-2 block w-full text-xs" /></label>
-          {files.length > 0 && <><div className="mt-3 flex items-center justify-between text-[11px] text-burgundy/60"><span>Выбрано: {files.length}{draft.kind === 'album' ? ' из 12' : ''}</span><span>{(files.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(1)} МБ</span></div><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{previews.map((preview, index) => <div key={`${preview.file.name}-${preview.file.lastModified}`} className="min-w-0 overflow-hidden rounded-xl border border-burgundy/10 bg-white/75"><div className="aspect-[4/5] overflow-hidden bg-black/5"><img src={preview.url} alt="" className="h-full w-full object-cover" /></div><div className="p-2"><div className="truncate text-[10px]" title={preview.file.name}>{index + 1}. {preview.file.name}</div><div className="mt-2 flex items-center justify-between"><div className="flex gap-1">{draft.kind === 'album' && <><button type="button" aria-label="Передвинуть влево" disabled={index === 0} onClick={() => moveFile(index, -1)} className="rounded-lg border p-1.5 disabled:opacity-25"><ArrowLeft size={12}/></button><button type="button" aria-label="Передвинуть вправо" disabled={index === files.length - 1} onClick={() => moveFile(index, 1)} className="rounded-lg border p-1.5 disabled:opacity-25"><ArrowRight size={12}/></button></>}</div><button type="button" aria-label="Удалить файл" onClick={() => setFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="rounded-lg border border-red-900/10 p-1.5 text-red-700"><Trash2 size={12}/></button></div></div></div>)}</div></>}
+        {(draft.kind === 'memory' || draft.kind === 'special' || draft.kind === 'gif' || draft.kind === 'video' || draft.kind === 'interactive' || draft.kind === 'album') && <div className="mt-3 rounded-xl border border-dashed border-burgundy/15 bg-[#FBF8F5] p-3 text-sm">
+          <label className="block cursor-pointer"><span className="flex items-center gap-2">{draft.kind === 'video' ? <Video size={16} /> : <ImagePlus size={16} />}{draft.kind === 'album' ? 'Скриншоты — выбирай сразу несколько или добавляй ещё' : draft.kind === 'gif' ? 'GIF-файл' : draft.kind === 'video' ? 'Видеофайл до 200 МБ' : 'Фото или GIF (необязательно)'}</span><input type="file" multiple={draft.kind === 'album'} accept={draft.kind === 'video' ? 'video/mp4,video/webm,video/quicktime,video/*' : draft.kind === 'gif' ? 'image/gif,.gif' : 'image/*,.gif'} onChange={(event) => { selectFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ''; }} className="mt-2 block w-full text-xs" /></label>
+          {files.length > 0 && <><div className="mt-3 flex items-center justify-between text-[11px] text-burgundy/60"><span>Выбрано: {files.length}{draft.kind === 'album' ? ' из 12' : ''}</span><span>{(files.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(1)} МБ</span></div><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{previews.map((preview, index) => <div key={`${preview.file.name}-${preview.file.lastModified}`} className="min-w-0 overflow-hidden rounded-xl border border-burgundy/10 bg-white/75"><div className="aspect-[4/5] overflow-hidden bg-black/5">{draft.kind === 'video' ? <video src={preview.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <img src={preview.url} alt="" className="h-full w-full object-cover" />}</div><div className="p-2"><div className="truncate text-[10px]" title={preview.file.name}>{index + 1}. {preview.file.name}</div><div className="mt-2 flex items-center justify-between"><div className="flex gap-1">{draft.kind === 'album' && <><button type="button" aria-label="Передвинуть влево" disabled={index === 0} onClick={() => moveFile(index, -1)} className="rounded-lg border p-1.5 disabled:opacity-25"><ArrowLeft size={12}/></button><button type="button" aria-label="Передвинуть вправо" disabled={index === files.length - 1} onClick={() => moveFile(index, 1)} className="rounded-lg border p-1.5 disabled:opacity-25"><ArrowRight size={12}/></button></>}</div><button type="button" aria-label="Удалить файл" onClick={() => setFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="rounded-lg border border-red-900/10 p-1.5 text-red-700"><Trash2 size={12}/></button></div></div></div>)}</div></>}
         </div>}
 
+        {draft.kind === 'music' && <div className="mt-3 rounded-2xl border border-burgundy/10 bg-[#FBF8F5] p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-burgundy"><Music2 size={16}/>Музыка или своё аудио</div>
+          <div className="mt-3 grid grid-cols-2 rounded-xl bg-black/[.035] p-1 text-xs"><button type="button" onClick={() => { setFiles([]); setCoverFile(null); patch({ musicMode: 'search' }); }} className={`rounded-lg px-3 py-2 ${draft.musicMode === 'search' ? 'bg-white text-burgundy shadow-sm' : 'opacity-50'}`}>Найти песню</button><button type="button" onClick={() => patch({ musicMode: 'upload' })} className={`rounded-lg px-3 py-2 ${draft.musicMode === 'upload' ? 'bg-white text-burgundy shadow-sm' : 'opacity-50'}`}>Загрузить своё</button></div>
+          <div className="mt-3">{draft.musicMode === 'search'
+            ? <SongSearch value={draft.selectedSong} onChange={(song) => patch({ selectedSong: song })} />
+            : <div className="space-y-3"><label className="block text-sm">Аудиофайл до 25 МБ<input type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.flac,.webm" onChange={(event) => { selectFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ''; }} className="mt-2 block w-full rounded-xl border border-dashed p-3 text-xs" /></label>{files[0] && <div className="flex items-center gap-3 rounded-xl bg-white p-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-burgundy text-gold"><Music2 size={17}/></span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{files[0].name}</span><span className="text-[10px] opacity-45">{(files[0].size / 1024 / 1024).toFixed(1)} МБ</span></span><button type="button" onClick={() => setFiles([])} className="rounded-lg border p-2 text-red-700"><Trash2 size={13}/></button></div>}<input value={draft.artist} onChange={(event) => patch({ artist: event.target.value })} placeholder="Исполнитель (необязательно)" className="w-full rounded-xl border p-3 text-sm"/><label className="block text-sm">Обложка для винила (необязательно)<input type="file" accept="image/*" onChange={(event) => { const next = event.target.files?.[0] ?? null; if (next && next.size > 5 * 1024 * 1024) setMessage('Обложка должна быть не больше 5 МБ.'); else setCoverFile(next); event.currentTarget.value = ''; }} className="mt-2 block w-full rounded-xl border border-dashed p-3 text-xs" /></label>{coverFile && <div className="flex items-center justify-between rounded-xl bg-white p-3 text-xs"><span className="min-w-0 truncate">Обложка: {coverFile.name}</span><button type="button" onClick={() => setCoverFile(null)} className="ml-2 rounded-lg border p-2 text-red-700"><Trash2 size={13}/></button></div>}</div>}
+          </div>
+        </div>}
         {draft.kind === 'gif' && <label className="mt-3 block text-sm">Или прямая ссылка на GIF<input value={draft.gifUrl} inputMode="url" onChange={(event) => patch({ gifUrl: event.target.value })} placeholder="https://…/animation.gif" className="mt-2 w-full rounded-xl border p-3" /></label>}
+        {draft.kind === 'video' && <label className="mt-3 block text-sm">Или прямая ссылка на MP4/WebM<input value={draft.externalUrl} inputMode="url" onChange={(event) => patch({ externalUrl: event.target.value })} placeholder="https://…/video.mp4" className="mt-2 w-full rounded-xl border p-3" /><span className="mt-1 block text-[10px] opacity-45">Если выбран файл, будет загружен именно он. Ссылка используется только без файла.</span></label>}
+        {draft.kind === 'link' && <div className="mt-3 rounded-2xl border border-burgundy/10 bg-[#FBF8F5] p-3"><label className="block text-sm"><span className="flex items-center gap-2"><Link2 size={15}/>Адрес перехода</span><input value={draft.externalUrl} inputMode="url" onChange={(event) => patch({ externalUrl: event.target.value })} placeholder="https://example.com" className="mt-2 w-full rounded-xl border p-3" /></label><label className="mt-3 block text-sm">Как открыть<select value={draft.linkOpenMode} onChange={(event) => patch({ linkOpenMode: event.target.value as Draft['linkOpenMode'] })} className="mt-2 w-full rounded-xl border p-3"><option value="external">Перейти на сайт в новой вкладке</option><option value="preview">Открыть маленьким окном внутри истории</option></select></label><p className="mt-2 text-[10px] opacity-45">Некоторые сайты запрещают встраивание. Тогда у неё останется кнопка «открыть отдельно».</p></div>}
         {draft.kind === 'interactive' && <div className="mt-3 space-y-3"><label className="block text-sm">Как открывается<select value={draft.interaction} onChange={(event) => patch({ interaction: event.target.value })} className="mt-2 w-full rounded-xl border p-3">{INTERACTION_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.hint}</option>)}</select></label>{['question','choice','scale'].includes(draft.interaction) && <div className="rounded-2xl border border-burgundy/10 bg-[#FBF8F5] p-3"><div className="text-xs font-medium text-burgundy">{draft.interaction === 'scale' ? 'Подписи краёв шкалы' : 'Два варианта ответа'}</div><div className="mt-2 grid grid-cols-2 gap-2"><input value={draft.optionA} onChange={(event) => patch({ optionA: event.target.value })} placeholder={draft.interaction === 'scale' ? 'Немного' : 'Первый ответ'} className="min-w-0 rounded-xl border p-3 text-sm"/><input value={draft.optionB} onChange={(event) => patch({ optionB: event.target.value })} placeholder={draft.interaction === 'scale' ? 'Бесконечно' : 'Второй ответ'} className="min-w-0 rounded-xl border p-3 text-sm"/></div>{draft.interaction !== 'scale' && <div className="mt-2 grid gap-2"><input value={draft.resultA} onChange={(event) => patch({ resultA: event.target.value })} placeholder="Ответ после первого выбора (необязательно)" className="rounded-xl border p-3 text-sm"/><input value={draft.resultB} onChange={(event) => patch({ resultB: event.target.value })} placeholder="Ответ после второго выбора (необязательно)" className="rounded-xl border p-3 text-sm"/></div>}</div>}</div>}
         {draft.kind === 'album' && <div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-sm">Оформление альбома<select value={draft.albumLayout} onChange={(event) => patch({ albumLayout: event.target.value })} className="mt-2 w-full rounded-xl border p-3"><option value="carousel">Карусель — листать пальцем</option><option value="stack">Стопка снимков</option><option value="collage">Коллаж</option></select></label><label className="text-sm">Твоя реакция<div className="mt-2 flex gap-2"><select value={draft.reactionEmoji} onChange={(event) => patch({ reactionEmoji: event.target.value })} className="w-20 rounded-xl border p-3"><option>❤</option><option>🥹</option><option>😂</option><option>✨</option><option>💔</option></select><input value={draft.reactionText} onChange={(event) => patch({ reactionText: event.target.value })} placeholder="например: до сих пор улыбаюсь" className="min-w-0 flex-1 rounded-xl border p-3" /></div></label></div>}
 
@@ -263,7 +367,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
 
       <div className="min-w-0 space-y-4">
         <div className="rounded-[28px] bg-gradient-to-br from-[#351523] to-[#1f1118] p-5 text-white shadow-xl"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[2px] text-white/45"><Sparkles size={13} /> визуальная мастерская</div><h2 className="mt-2 font-serif text-3xl">Настрой и сразу увидь результат</h2><div className="mt-4 grid gap-2 text-xs text-white/65 sm:grid-cols-3"><div className="rounded-xl bg-white/5 p-3"><Check size={13} className="mb-1" />Дата слева, справа или по центру</div><div className="rounded-xl bg-white/5 p-3"><Layers3 size={13} className="mb-1" />Фоны по ссылке и эффекты</div><div className="rounded-xl bg-white/5 p-3"><ImagePlus size={13} className="mb-1" />Альбомы до 12 кадров</div></div></div>
-        <StyleEditor value={draft.style} onChange={(style) => patch({ style })} hasMedia={draft.kind === 'album' || draft.kind === 'gif' || files.length > 0} />
+        <StyleEditor value={draft.style} onChange={(style) => patch({ style })} hasMedia={draft.kind === 'album' || draft.kind === 'gif' || draft.kind === 'video' || draft.kind === 'music' || files.length > 0} />
       </div>
     </section>
   );

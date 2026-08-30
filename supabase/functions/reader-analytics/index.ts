@@ -126,17 +126,19 @@ function storyPoint(row: StoryPointRow): { label: string; preview: string | null
   const metadataTitle = shortText(metadata.title, 140);
   const year = shortText(metadata.year, 12);
   const labels: Record<string, string> = {
-    message: 'Сообщение', photo: 'Фотография', video: 'Видео', audio: 'Аудиосообщение', sticker: 'Стикер',
+    message: 'Сообщение', photo: 'Фотография', video: metadataTitle ?? 'Видео', audio: metadataTitle ?? 'Аудиозапись', sticker: 'Стикер',
     memory: shortText(row.memory_title, 140) ?? 'Воспоминание',
     special: shortText(row.memory_title, 140) ?? metadataTitle ?? 'Особый момент',
     interactive: shortText(row.memory_title, 140) ?? metadataTitle ?? 'Интерактивный момент',
     screenshot: shortText(row.screenshot_title, 140) ?? 'Скриншот',
     chapter: metadataTitle ?? 'Глава', quote: metadataTitle ?? 'Цитата', pause: metadataTitle ?? 'Пауза',
+    link: metadataTitle ?? 'Переход по ссылке',
     year_break: `${year ?? new Date(row.occurred_at ?? Date.now()).getUTCFullYear()} год`,
     on_this_day: 'В этот день', milestone: metadataTitle ?? 'Важная точка',
   };
   const preview = [row.display_text, row.original_text, row.memory_body, row.screenshot_description,
-    row.screenshot_caption, metadata.text, metadata.body, metadata.subtitle, row.media_filename]
+    row.screenshot_caption, metadata.description, metadata.text, metadata.body, metadata.artist, metadata.album,
+    metadata.subtitle, metadata.url, row.media_filename]
     .map((item) => shortText(item, 280)).find(Boolean) ?? null;
   return { label: labels[String(row.type ?? '')] ?? 'Элемент истории', preview };
 }

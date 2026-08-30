@@ -12,12 +12,15 @@ import {
   BarChart3,
   CalendarClock,
   CheckSquare2,
+  Dice5,
   Eye,
   FileArchive,
   GripVertical,
   ImagePlus,
   Images,
+  Link2,
   LogOut,
+  Music2,
   Plus,
   RefreshCw,
   Save,
@@ -26,6 +29,7 @@ import {
   Sparkles,
   Star,
   Trash2,
+  Video,
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
@@ -41,6 +45,9 @@ import AnalyticsPanel from "./AnalyticsPanel";
 import { ALIGN_OPTIONS, DATE_STYLE_OPTIONS, FONT_OPTIONS } from "@/lib/styleOptions";
 import QuickCreatePanel from "./QuickCreatePanel";
 import { safeRemoteUrl } from "@/lib/safeUrl";
+import { createManualAudio, createManualVideo } from "@/lib/manualMedia";
+import SongSearch from "@/components/admin/SongSearch";
+import type { SongSearchResult } from "@/lib/songSearch";
 import SafetyPanel from "./SafetyPanel";
 
 interface ImportRow {
@@ -802,6 +809,9 @@ type InsertKind =
   | "quote"
   | "pause"
   | "gif"
+  | "music"
+  | "video"
+  | "link"
   | "special"
   | "memory"
   | "screenshot"
@@ -823,6 +833,9 @@ const insertKindLabel: Record<InsertKind, string> = {
   quote: "Цитата",
   pause: "Пауза",
   gif: "GIF",
+  music: "Музыка",
+  video: "Видео",
+  link: "Ссылка",
   special: "Особый момент",
   memory: "Воспоминание",
   screenshot: "Скриншот",
@@ -871,6 +884,11 @@ interface InsertGapProps {
   insertKind: InsertKind | null;
   insertTitle: string;
   insertBody: string;
+  insertUrl: string;
+  insertLinkMode: "external" | "preview";
+  insertMusicMode: "search" | "upload";
+  insertSong: SongSearchResult | null;
+  insertArtist: string;
   insertBusy: boolean;
   insertError: string;
   onOpen: (prevId: string | null, nextId: string | null) => void;
@@ -878,6 +896,12 @@ interface InsertGapProps {
   onPickKind: (kind: InsertKind) => void;
   onTitleChange: (v: string) => void;
   onBodyChange: (v: string) => void;
+  onUrlChange: (v: string) => void;
+  onLinkModeChange: (v: "external" | "preview") => void;
+  onMusicModeChange: (v: "search" | "upload") => void;
+  onSongChange: (song: SongSearchResult | null) => void;
+  onArtistChange: (v: string) => void;
+  onCoverFileChange: (f: File | null) => void;
   onFileChange: (f: File | null) => void;
   onSubmit: () => void;
 }
@@ -889,6 +913,11 @@ function InsertGap({
   insertKind,
   insertTitle,
   insertBody,
+  insertUrl,
+  insertLinkMode,
+  insertMusicMode,
+  insertSong,
+  insertArtist,
   insertBusy,
   insertError,
   onOpen,
@@ -896,6 +925,12 @@ function InsertGap({
   onPickKind,
   onTitleChange,
   onBodyChange,
+  onUrlChange,
+  onLinkModeChange,
+  onMusicModeChange,
+  onSongChange,
+  onArtistChange,
+  onCoverFileChange,
   onFileChange,
   onSubmit,
 }: InsertGapProps) {
@@ -915,8 +950,8 @@ function InsertGap({
         </button>
       </div>
     );
-  const hasTitle = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "pause";
-  const hasPhoto = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "chapter" && insertKind !== "quote" && insertKind !== "pause";
+  const hasTitle = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "pause" && !(insertKind === "music" && insertMusicMode === "search");
+  const hasPhoto = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "chapter" && insertKind !== "quote" && insertKind !== "pause" && insertKind !== "video" && insertKind !== "link" && insertKind !== "music";
   return (
     <div className="my-2 rounded-2xl border border-dashed border-burgundy/25 bg-[#FBF3EE] p-3">
       {!insertKind ? (
@@ -933,7 +968,7 @@ function InsertGap({
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
             {(
-              ["message", "chapter", "quote", "pause", "gif", "special", "memory", "screenshot"] as InsertKind[]
+              ["message", "chapter", "quote", "pause", "gif", "music", "video", "link", "special", "memory", "screenshot"] as InsertKind[]
             ).map((k) => (
               <button
                 key={k}
@@ -998,13 +1033,85 @@ function InsertGap({
               className="w-full rounded-lg border p-2 text-sm"
             />
           )}
-          {insertKind === "screenshot" && (
+          {insertKind === "music" && (
+            <div className="space-y-3 rounded-xl border border-burgundy/10 bg-white/70 p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onMusicModeChange("search")}
+                  className={`rounded-lg border px-3 py-2 text-xs ${insertMusicMode === "search" ? "border-burgundy bg-burgundy text-white" : "border-black/10 bg-white"}`}
+                >
+                  <Music2 size={13} className="mr-1 inline" />Найти песню
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onMusicModeChange("upload")}
+                  className={`rounded-lg border px-3 py-2 text-xs ${insertMusicMode === "upload" ? "border-burgundy bg-burgundy text-white" : "border-black/10 bg-white"}`}
+                >
+                  Загрузить аудио
+                </button>
+              </div>
+              {insertMusicMode === "search" ? (
+                <SongSearch value={insertSong} onChange={onSongChange} />
+              ) : (
+                <div className="space-y-2">
+                  <label className="block text-xs opacity-60">
+                    Аудиофайл · до 25 МБ
+                    <input
+                      type="file"
+                      accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.flac,.webm"
+                      onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+                      className="mt-1 block w-full rounded-lg border border-dashed p-2 text-xs"
+                    />
+                  </label>
+                  <input
+                    value={insertArtist}
+                    onChange={(event) => onArtistChange(event.target.value)}
+                    placeholder="Исполнитель (необязательно)"
+                    className="w-full rounded-lg border p-2 text-sm"
+                  />
+                  <label className="block text-xs opacity-60">
+                    Обложка · до 5 МБ (необязательно)
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => onCoverFileChange(event.target.files?.[0] ?? null)}
+                      className="mt-1 block w-full rounded-lg border border-dashed p-2 text-xs"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+          {(insertKind === "screenshot" || insertKind === "video") && (
             <input
               type="file"
-              accept="image/*,.gif"
+              accept={insertKind === "video" ? "video/mp4,video/webm,video/quicktime,video/*" : "image/*,.gif"}
               onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
               className="w-full rounded-lg border border-dashed p-2 text-xs"
             />
+          )}
+          {(insertKind === "video" || insertKind === "link") && (
+            <label className="block text-xs opacity-60">
+              {insertKind === "video" ? "Или прямая ссылка на MP4/WebM" : "Ссылка"}
+              <input
+                value={insertUrl}
+                inputMode="url"
+                onChange={(e) => onUrlChange(e.target.value)}
+                placeholder={insertKind === "video" ? "https://…/video.mp4" : "https://example.com"}
+                className="mt-1 w-full rounded-lg border p-2 text-sm"
+              />
+            </label>
+          )}
+          {insertKind === "link" && (
+            <label className="block text-xs opacity-60">
+              Как открыть
+              <select value={insertLinkMode} onChange={(e) => onLinkModeChange(e.target.value as "external" | "preview")} className="mt-1 w-full rounded-lg border p-2 text-sm">
+                <option value="external">Переход в новой вкладке</option>
+                <option value="preview">Маленькое окно внутри истории</option>
+              </select>
+              <span className="mt-1 block text-[10px] opacity-60">Если сайт запрещает встраивание, останется кнопка перехода.</span>
+            </label>
           )}
           <textarea
             value={insertBody}
@@ -1020,6 +1127,12 @@ function InsertGap({
                   ? "Тихая подпись — можно оставить пустой"
                 : insertKind === "message"
                   ? "Текст сообщения"
+                  : insertKind === "video"
+                    ? "Подпись к видео (необязательно)"
+                  : insertKind === "music"
+                    ? "Почему эта песня здесь? (необязательно)"
+                  : insertKind === "link"
+                    ? "Описание перехода (необязательно)"
                   : interactionKinds.has(insertKind)
                     ? "Что откроется после нажатия?"
                     : "Текст момента"
@@ -1074,7 +1187,13 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   const [insertKind, setInsertKind] = useState<InsertKind | null>(null);
   const [insertTitle, setInsertTitle] = useState("");
   const [insertBody, setInsertBody] = useState("");
+  const [insertUrl, setInsertUrl] = useState("");
+  const [insertLinkMode, setInsertLinkMode] = useState<"external" | "preview">("external");
+  const [insertMusicMode, setInsertMusicMode] = useState<"search" | "upload">("search");
+  const [insertSong, setInsertSong] = useState<SongSearchResult | null>(null);
+  const [insertArtist, setInsertArtist] = useState("");
   const [insertFile, setInsertFile] = useState<File | null>(null);
+  const [insertCoverFile, setInsertCoverFile] = useState<File | null>(null);
   const [insertBusy, setInsertBusy] = useState(false);
   const [insertError, setInsertError] = useState("");
   // Воспоминания/особые моменты и скриншоты, вставленные через «+» (или
@@ -1105,6 +1224,16 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   const [chapterForm, setChapterForm] = useState({ title: "", subtitle: "", number: "" });
   const [sceneEditing, setSceneEditing] = useState<string | null>(null);
   const [sceneForm, setSceneForm] = useState({ title: "", body: "" });
+  const [externalEditing, setExternalEditing] = useState<string | null>(null);
+  const [externalForm, setExternalForm] = useState({
+    title: "",
+    body: "",
+    url: "",
+    artist: "",
+    album: "",
+    coverUrl: "",
+    openMode: "external" as "external" | "preview",
+  });
 
   // Сортировка по возрастанию (старое → новое), как в самой читалке — так
   // порядок карточек в админке совпадает с тем, что увидит читатель, и
@@ -1278,6 +1407,28 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     if (error) window.alert(error.message);
     else { setSceneEditing(null); await load(); }
   }
+  async function saveExternalScene(row: TimelineRow) {
+    const url = safeRemoteUrl(externalForm.url);
+    if (!url) { window.alert("Вставь полную ссылку, начинающуюся с https:// или http://."); return; }
+    const metadata = row.type === "link"
+      ? { ...(row.metadata ?? {}), url, title: externalForm.title.trim() || "Открыть следующую страницу", description: externalForm.body.trim() || null, openMode: externalForm.openMode }
+      : row.type === "audio"
+        ? {
+            ...(row.metadata ?? {}),
+            title: externalForm.title.trim() || null,
+            body: externalForm.body.trim() || null,
+            artist: externalForm.artist.trim() || null,
+            album: externalForm.album.trim() || null,
+            coverUrl: safeRemoteUrl(externalForm.coverUrl),
+          }
+        : { ...(row.metadata ?? {}), title: externalForm.title.trim() || null, body: externalForm.body.trim() || null };
+    const payload = row.type === "link"
+      ? { metadata }
+      : { metadata, style: { ...(row.style ?? {}), externalMediaUrl: url, externalMediaKind: row.type === "audio" ? "audio" : "video" } };
+    const { error } = await supabase.from("timeline_elements").update(payload).eq("id", row.id);
+    if (error) window.alert(error.message);
+    else { setExternalEditing(null); await load(); }
+  }
   async function toggle(row: TimelineRow) {
     const { error } = await supabase
       .from("timeline_elements")
@@ -1314,6 +1465,17 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
       setBulkStyle({});
       await load();
     }
+  }
+  async function randomizeSelectedStyles() {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    const { error } = await supabase.rpc("admin_randomize_timeline_styles", {
+      p_ids: ids,
+    });
+    setBulkBusy(false);
+    if (error) window.alert(error.message);
+    else await load();
   }
   async function deleteElements(ids: string[]) {
     if (
@@ -1425,7 +1587,13 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     setInsertKind(null);
     setInsertTitle("");
     setInsertBody("");
+    setInsertUrl("");
+    setInsertLinkMode("external");
+    setInsertMusicMode("search");
+    setInsertSong(null);
+    setInsertArtist("");
     setInsertFile(null);
+    setInsertCoverFile(null);
     setInsertError("");
   }
   async function submitInsert() {
@@ -1440,7 +1608,95 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     try {
       setInsertBusy(true);
       const id = crypto.randomUUID();
-      if (insertKind === "message") {
+      let createdTimelineElementId: string | null = null;
+      if (insertKind === "music") {
+        if (insertMusicMode === "search") {
+          if (!insertSong) throw new Error("Найди и выбери песню.");
+          const previewUrl = safeRemoteUrl(insertSong.previewUrl);
+          if (!previewUrl) throw new Error("У этой песни нет доступного аудиопревью.");
+          const { error } = await supabase.from("timeline_elements").insert({
+            id,
+            type: "audio",
+            occurred_at: at,
+            sort_tiebreak: 5,
+            style: {
+              zone: "night",
+              frame: "minimal",
+              spacing: "cinematic",
+              externalMediaUrl: previewUrl,
+              externalMediaKind: "audio",
+            },
+            is_published: true,
+            metadata: {
+              title: insertSong.title,
+              artist: insertSong.artist,
+              album: insertSong.album || null,
+              coverUrl: safeRemoteUrl(insertSong.artworkUrl),
+              sourceUrl: safeRemoteUrl(insertSong.sourceUrl),
+              genre: insertSong.genre || null,
+              durationMs: insertSong.durationMs,
+              body: insertBody.trim() || null,
+              musicSource: "search",
+            },
+          });
+          if (error) throw error;
+          createdTimelineElementId = id;
+        } else {
+          if (!insertFile) throw new Error("Выбери аудиофайл.");
+          createdTimelineElementId = await createManualAudio({
+            file: insertFile,
+            coverFile: insertCoverFile,
+            title: insertTitle,
+            artist: insertArtist,
+            caption: insertBody,
+            occurredAt: at,
+            style: { zone: "night", frame: "minimal", spacing: "cinematic" },
+          });
+        }
+      } else if (insertKind === "video") {
+        const externalUrl = safeRemoteUrl(insertUrl);
+        if (!insertFile && !externalUrl) throw new Error("Выбери видеофайл или вставь прямую ссылку на видео.");
+        if (insertFile) {
+          createdTimelineElementId = await createManualVideo({
+            file: insertFile,
+            title: insertTitle,
+            caption: insertBody,
+            occurredAt: at,
+            style: { zone: "default", frame: "film", spacing: "cinematic" },
+          });
+        } else {
+          const { error } = await supabase.from("timeline_elements").insert({
+            id,
+            type: "video",
+            occurred_at: at,
+            sort_tiebreak: 5,
+            style: { zone: "default", frame: "film", spacing: "cinematic", externalMediaUrl: externalUrl, externalMediaKind: "video" },
+            is_published: true,
+            metadata: { title: insertTitle.trim() || null, body: insertBody.trim() || null },
+          });
+          if (error) throw error;
+          createdTimelineElementId = id;
+        }
+      } else if (insertKind === "link") {
+        const url = safeRemoteUrl(insertUrl);
+        if (!url) throw new Error("Вставь полную ссылку, начинающуюся с https:// или http://.");
+        const { error } = await supabase.from("timeline_elements").insert({
+          id,
+          type: "link",
+          occurred_at: at,
+          sort_tiebreak: 15,
+          style: { zone: "dusk", spacing: "cinematic", animation: "fade-up" },
+          is_published: true,
+          metadata: {
+            url,
+            title: insertTitle.trim() || "Открыть следующую страницу",
+            description: insertBody.trim() || null,
+            openMode: insertLinkMode,
+          },
+        });
+        if (error) throw error;
+        createdTimelineElementId = id;
+      } else if (insertKind === "message") {
         // Обычная строка истории, набранная прямо в админке — ведёт себя как
         // импортированное сообщение (те же поля, тот же триггер
         // trg_sync_message_timeline на таблице messages сам создаёт запись в
@@ -1556,11 +1812,11 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
         ? "message_id"
         : insertKind === "screenshot"
           ? "screenshot_id"
-          : (["quote", "pause", "chapter"] as InsertKind[]).includes(insertKind)
+          : (["quote", "pause", "chapter", "music", "video", "link"] as InsertKind[]).includes(insertKind)
             ? null
             : "memory_id";
-      let timelineElementId = id;
-      if (sourceColumn) {
+      let timelineElementId = createdTimelineElementId ?? id;
+      if (!createdTimelineElementId && sourceColumn) {
         const { data: createdTimeline, error: lookupError } = await supabase
           .from("timeline_elements")
           .select("id")
@@ -1637,6 +1893,15 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
             </button>
             <button
               disabled={bulkBusy}
+              onClick={() => void randomizeSelectedStyles()}
+              title="Каждая выбранная запись получит своё сочетание рамки, шрифта, фона, даты, анимации и эффекта"
+              className="rounded-lg border border-gold/35 bg-[#fffaf3] px-3 py-2 text-xs text-burgundy"
+            >
+              <Dice5 size={13} className="mr-1 inline" />
+              Рандом каждой
+            </button>
+            <button
+              disabled={bulkBusy}
               onClick={() => void bulkUpdate(null, true)}
               className="rounded-lg border px-3 py-2 text-xs"
             >
@@ -1695,6 +1960,11 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
           insertKind={insertKind}
           insertTitle={insertTitle}
           insertBody={insertBody}
+          insertUrl={insertUrl}
+          insertLinkMode={insertLinkMode}
+          insertMusicMode={insertMusicMode}
+          insertSong={insertSong}
+          insertArtist={insertArtist}
           insertBusy={insertBusy}
           insertError={insertError}
           onOpen={openInsert}
@@ -1702,6 +1972,17 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
           onPickKind={setInsertKind}
           onTitleChange={setInsertTitle}
           onBodyChange={setInsertBody}
+          onUrlChange={setInsertUrl}
+          onLinkModeChange={setInsertLinkMode}
+          onMusicModeChange={(mode) => {
+            setInsertMusicMode(mode);
+            setInsertFile(null);
+            setInsertCoverFile(null);
+            if (mode === "upload") setInsertSong(null);
+          }}
+          onSongChange={setInsertSong}
+          onArtistChange={setInsertArtist}
+          onCoverFileChange={setInsertCoverFile}
           onFileChange={setInsertFile}
           onSubmit={() => void submitInsert()}
         />
@@ -1710,6 +1991,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
           const hasMedia = Boolean(
             row.media_id || row.screenshot_id || row.memory_id,
           );
+          const directExternal = row.type === "link" || ((row.type === "video" || row.type === "audio") && !row.message_id);
           const draggableRow =
             reorderable &&
             row.type !== "year_break" &&
@@ -1946,6 +2228,37 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                   })()}
                 {row.type === "chapter" && <div className="mt-3 rounded-xl bg-white p-3"><div className="text-[10px] uppercase tracking-[1.6px] text-gold">глава {String(row.metadata?.number ?? "")}</div>{chapterEditing === row.id ? <div className="mt-2 space-y-2"><input value={chapterForm.title} onChange={(event) => setChapterForm({ ...chapterForm, title: event.target.value })} placeholder="Название главы" className="w-full rounded-xl border p-3 text-sm" /><textarea value={chapterForm.subtitle} onChange={(event) => setChapterForm({ ...chapterForm, subtitle: event.target.value })} placeholder="Подзаголовок" className="min-h-20 w-full rounded-xl border p-3 text-sm" /><input value={chapterForm.number} onChange={(event) => setChapterForm({ ...chapterForm, number: event.target.value })} placeholder="Номер" inputMode="numeric" className="w-full rounded-xl border p-3 text-sm" /><button type="button" onClick={() => void saveChapter(row)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить главу</button></div> : <><div className="mt-1 font-serif text-2xl text-burgundy">{String(row.metadata?.title ?? "Новая глава")}</div>{row.metadata?.subtitle && <p className="mt-1 text-sm opacity-55">{String(row.metadata.subtitle)}</p>}</>}</div>}
                 {(row.type === "quote" || row.type === "pause") && <div className="mt-3 rounded-xl bg-white p-3">{sceneEditing === row.id ? <div className="space-y-2">{row.type === "quote" && <input value={sceneForm.title} onChange={(event) => setSceneForm({ ...sceneForm, title: event.target.value })} placeholder="Автор или подпись" className="w-full rounded-xl border p-3 text-sm"/>}<textarea value={sceneForm.body} onChange={(event) => setSceneForm({ ...sceneForm, body: event.target.value })} placeholder={row.type === "quote" ? "Текст цитаты" : "Текст паузы"} className="min-h-24 w-full rounded-xl border p-3 text-sm"/><button type="button" onClick={() => void saveScene(row)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить сцену</button></div> : <><div className="text-[10px] uppercase tracking-[1.6px] text-gold">{row.type === "quote" ? "цитата" : "пауза"}</div><p className="mt-2 whitespace-pre-wrap font-serif text-xl">{String(row.type === "quote" ? row.metadata?.quote ?? "" : row.metadata?.text ?? "Тихая пауза")}</p>{row.type === "quote" && row.metadata?.author && <div className="mt-2 text-xs opacity-50">{String(row.metadata.author)}</div>}</>}</div>}
+                {directExternal && (
+                  <div className="mt-3 rounded-xl bg-white p-3">
+                    {externalEditing === row.id ? (
+                      <div className="space-y-2">
+                        <input value={externalForm.title} onChange={(event) => setExternalForm({ ...externalForm, title: event.target.value })} placeholder="Название" className="w-full rounded-xl border p-3 text-sm" />
+                        {row.type === "audio" && (
+                          <>
+                            <input value={externalForm.artist} onChange={(event) => setExternalForm({ ...externalForm, artist: event.target.value })} placeholder="Исполнитель" className="w-full rounded-xl border p-3 text-sm" />
+                            <input value={externalForm.album} onChange={(event) => setExternalForm({ ...externalForm, album: event.target.value })} placeholder="Альбом" className="w-full rounded-xl border p-3 text-sm" />
+                            <input value={externalForm.coverUrl} inputMode="url" onChange={(event) => setExternalForm({ ...externalForm, coverUrl: event.target.value })} placeholder="https://…/cover.jpg" className="w-full rounded-xl border p-3 text-sm" />
+                          </>
+                        )}
+                        <input value={externalForm.url} inputMode="url" onChange={(event) => setExternalForm({ ...externalForm, url: event.target.value })} placeholder={row.type === "video" ? "https://…/video.mp4" : row.type === "audio" ? "https://…/audio.m4a" : "https://example.com"} className="w-full rounded-xl border p-3 text-sm" />
+                        <textarea value={externalForm.body} onChange={(event) => setExternalForm({ ...externalForm, body: event.target.value })} placeholder="Описание или подпись" className="min-h-20 w-full rounded-xl border p-3 text-sm" />
+                        {row.type === "link" && <select value={externalForm.openMode} onChange={(event) => setExternalForm({ ...externalForm, openMode: event.target.value as "external" | "preview" })} className="w-full rounded-xl border p-3 text-sm"><option value="external">Переход в новой вкладке</option><option value="preview">Маленькое окно внутри истории</option></select>}
+                        <button type="button" onClick={() => void saveExternalScene(row)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить</button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 text-[10px] uppercase tracking-[1.6px] text-gold">
+                          {row.type === "link" ? <Link2 size={13} /> : row.type === "audio" ? <Music2 size={13} /> : <Video size={13} />}
+                          {row.type === "link" ? "переход" : row.type === "audio" ? "музыка" : "видео по ссылке"}
+                        </div>
+                        <div className="mt-2 font-serif text-xl text-burgundy">{String(row.metadata?.title ?? (row.type === "link" ? "Открыть следующую страницу" : row.type === "audio" ? "Аудиозапись" : "Видео"))}</div>
+                        {row.type === "audio" && row.metadata?.artist && <div className="mt-1 text-xs opacity-55">{String(row.metadata.artist)}{row.metadata?.album ? ` · ${String(row.metadata.album)}` : ""}</div>}
+                        {(row.metadata?.description || row.metadata?.body) && <p className="mt-1 whitespace-pre-wrap text-sm opacity-65">{String(row.metadata?.description ?? row.metadata?.body)}</p>}
+                        <div className="mt-2 truncate text-[11px] opacity-40">{String(row.type === "link" ? row.metadata?.url ?? "" : row.style?.externalMediaUrl ?? "")}</div>
+                      </>
+                    )}
+                  </div>
+                )}
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button type="button" aria-label="Переместить выше" title="Выше" disabled={!reorderable || i === 0 || busyId === row.id} onClick={() => moveOne(row, -1)} className="rounded-lg border px-2.5 py-2 text-xs disabled:opacity-25"><ArrowUp size={14} /></button>
                   <button type="button" aria-label="Переместить ниже" title="Ниже" disabled={!reorderable || i === visible.length - 1 || busyId === row.id} onClick={() => moveOne(row, 1)} className="rounded-lg border px-2.5 py-2 text-xs disabled:opacity-25"><ArrowDown size={14} /></button>
@@ -1975,9 +2288,20 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                       } else if (row.type === "quote" || row.type === "pause") {
                         setSceneEditing(row.id);
                         setSceneForm({ title: String(row.metadata?.author ?? ""), body: String(row.type === "quote" ? row.metadata?.quote ?? "" : row.metadata?.text ?? "") });
+                      } else if (directExternal) {
+                        setExternalEditing(row.id);
+                        setExternalForm({
+                          title: String(row.metadata?.title ?? ""),
+                          body: String(row.metadata?.description ?? row.metadata?.body ?? ""),
+                          url: String(row.type === "link" ? row.metadata?.url ?? "" : row.style?.externalMediaUrl ?? ""),
+                          artist: String(row.metadata?.artist ?? ""),
+                          album: String(row.metadata?.album ?? ""),
+                          coverUrl: String(row.metadata?.coverUrl ?? ""),
+                          openMode: row.metadata?.openMode === "preview" ? "preview" : "external",
+                        });
                       }
                     }}
-                    disabled={!m && !row.memory_id && !row.screenshot_id && !["chapter", "quote", "pause"].includes(row.type)}
+                    disabled={!m && !row.memory_id && !row.screenshot_id && !["chapter", "quote", "pause"].includes(row.type) && !directExternal}
                     className="rounded-lg border px-3 py-2 text-xs disabled:opacity-30"
                   >
                     Текст
@@ -2040,6 +2364,11 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                 insertKind={insertKind}
                 insertTitle={insertTitle}
                 insertBody={insertBody}
+                insertUrl={insertUrl}
+                insertLinkMode={insertLinkMode}
+                insertMusicMode={insertMusicMode}
+                insertSong={insertSong}
+                insertArtist={insertArtist}
                 insertBusy={insertBusy}
                 insertError={insertError}
                 onOpen={openInsert}
@@ -2047,6 +2376,17 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                 onPickKind={setInsertKind}
                 onTitleChange={setInsertTitle}
                 onBodyChange={setInsertBody}
+                onUrlChange={setInsertUrl}
+                onLinkModeChange={setInsertLinkMode}
+                onMusicModeChange={(mode) => {
+                  setInsertMusicMode(mode);
+                  setInsertFile(null);
+                  setInsertCoverFile(null);
+                  if (mode === "upload") setInsertSong(null);
+                }}
+                onSongChange={setInsertSong}
+                onArtistChange={setInsertArtist}
+                onCoverFileChange={setInsertCoverFile}
                 onFileChange={setInsertFile}
                 onSubmit={() => void submitInsert()}
               />

@@ -76,7 +76,7 @@ export interface ElementStyle {
   backgroundPosition?: string;
   backgroundOverlay?: number;
   externalMediaUrl?: string;
-  externalMediaKind?: 'image' | 'gif';
+  externalMediaKind?: 'image' | 'gif' | 'video' | 'audio';
 }
 
 export type TimelineElementType =
@@ -93,6 +93,7 @@ export type TimelineElementType =
   | 'chapter'
   | 'quote'
   | 'pause'
+  | 'link'
   | 'year_break'
   | 'on_this_day'
   | 'milestone';

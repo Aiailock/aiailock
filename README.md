@@ -18,6 +18,7 @@ The project is now completed across the planned stages:
 - **10. Cinematic + Safety:** dark graphite/gold reader, quote and pause scenes, resume reading, current chapter, scheduled publication, revision restore, integrity checks and downloadable JSON backups (`0014_cinematic_safety.sql`).
 - **11. Journey Reader:** exact Admin → Reader ordering without changing real dates, visible time-of-day atmospheres, eight reveal animations, twelve interactive moments, journey map, bookmarks, auto-reading and reader typography controls (`0015_journey_reader_order.sql`).
 - **12. Smooth Reader + Opinions:** fast first-page boot, automatic continuation loading, off-screen rendering isolation, phone-aware motion budget, configurable heart loader, written opinions on every story element and a faster mobile multi-screenshot composer (`0016_reader_opinions_performance.sql`).
+- **13. Detailed Reader Analytics:** human-readable last-read points and reaction targets, per-visit device/browser/screen/network details, session duration and an owner-only reset for visits, progress and optional reactions (`0017_detailed_reader_analytics.sql`).
 
 The public reader never receives `service_role`, AI metadata internals, prompt versions, import logs or admin controls.
 
@@ -65,6 +66,7 @@ The migration chain is intentionally ordered:
 0014_cinematic_safety.sql
 0015_journey_reader_order.sql
 0016_reader_opinions_performance.sql
+0017_detailed_reader_analytics.sql
 ```
 
 Supabase's CLI supports linking a project and deploying migrations/functions as code.
@@ -106,7 +108,7 @@ supabase functions deploy reader-reaction
 - `reader-reaction` → public endpoint with its own signed reader-token check
 
 ### Final schema migration
-Run `supabase db push` once from a linked project. The ordered migration chain through `0016_reader_opinions_performance.sql` is applied automatically.
+Run `supabase db push` once from a linked project. The ordered migration chain through `0017_detailed_reader_analytics.sql` is applied automatically.
 
 ## Required Edge Function secret
 

@@ -1,0 +1,208 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --cream: #fbf3ee;
+  --blush: #f2c9c2;
+  --peach: #f0b79a;
+  --lavender: #c8bfe7;
+  --burgundy: #4a1b2f;
+  --gold: #c9a063;
+  --ink: #3a2e30;
+  --paper: #f6efe0;
+}
+
+html,
+body {
+  width: 100%;
+  overflow-x: hidden;
+  background: var(--cream);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  color: var(--ink);
+  font-weight: 300;
+  position: relative;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .petal,
+  .pixel-heart,
+  .gif-sprite,
+  .confetti {
+    display: none;
+  }
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Scroll-reveal primitive used across reader components (stage: reader UI). */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 1.4s ease,
+    transform 1.4s ease;
+}
+.reveal.in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Decorative particle effects (see src/components/reader/EffectsLayer.tsx).
+   Ported 1:1 from reader-prototype.html's petal/confetti/snow/rain systems,
+   plus two new ideas (fireflies, stardust) not in the original prototype. */
+.petal { position: absolute; top: -5vh; z-index: 0; opacity: 0.55; animation: fall linear infinite; }
+.confetti { position: absolute; top: -5vh; width: 8px; height: 14px; opacity: 0.85; animation: fall linear infinite; border-radius: 2px; }
+.snow { position: absolute; top: -5vh; border-radius: 50%; background: #fff; opacity: 0.8; animation: fall linear infinite; }
+.rain-drop { position: absolute; top: -10vh; width: 1.5px; height: 46px; background: linear-gradient(180deg, rgba(255,255,255,0), rgba(220,235,245,0.6)); animation: fall-fast linear infinite; }
+.pixel-heart { position: absolute; font-family: 'VT323', monospace; font-size: 18px; color: #FF6FB5; animation: pxbeat 1.4s steps(2) infinite; text-shadow: 0 0 0 #FF6FB5; image-rendering: pixelated; }
+.firefly { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #FFD86B; box-shadow: 0 0 6px 2px rgba(255, 216, 107, 0.8); animation: drift ease-in-out infinite; }
+.stardust { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #EDE6F5; box-shadow: 0 0 4px 1px rgba(237, 230, 245, 0.9); animation: twinkle ease-in-out infinite; }
+
+/* BUGFIX: .petal / .confetti / .snow / .pixel-heart reference the `fall`
+   and `pxbeat` animations, but those keyframes only existed inside
+   tailwind.config.ts as an `animate-fall` / `animate-pxbeat` utility class.
+   Tailwind's JIT compiler only emits a @keyframes block when the matching
+   utility class is actually found in the scanned source files — and
+   `animate-fall`/`animate-pxbeat` were never used anywhere, so the
+   keyframes were silently dropped from the build and these four effects
+   did nothing. Defining them directly here (mirroring the tailwind config
+   values so nothing visually changes) fixes them for good. */
+@keyframes fall { to { transform: translateY(110vh) rotate(360deg); } }
+@keyframes pxbeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+
+@keyframes fall-fast { to { transform: translateY(115vh); } }
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0); opacity: 0.2; }
+  50% { transform: translate(6px, -14px); opacity: 1; }
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.3); }
+}
+
+/* New decoration: falling autumn leaves (forest / trees mood). */
+@keyframes leaf-fall {
+  0% { transform: translateY(-5vh) translateX(0) rotate(0deg); }
+  50% { transform: translateY(50vh) translateX(18px) rotate(180deg); }
+  100% { transform: translateY(110vh) translateX(-10px) rotate(360deg); }
+}
+.leaf { position: absolute; top: -5vh; font-size: 16px; opacity: 0.7; animation: leaf-fall linear infinite; }
+
+/* New decoration: soft candle glow, for quiet / sad / memory moments. */
+@keyframes candle-flicker {
+  0%, 100% { opacity: 0.75; transform: scale(1) translateY(0); }
+  45% { opacity: 1; transform: scale(1.08) translateY(-1px); }
+  60% { opacity: 0.85; transform: scale(0.96) translateY(1px); }
+}
+.candle-glow { position: absolute; bottom: 4%; width: 6px; height: 10px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; background: radial-gradient(circle, #FFE8A3 0%, #FFB35C 55%, transparent 80%); box-shadow: 0 0 18px 6px rgba(255, 179, 92, 0.45); animation: candle-flicker ease-in-out infinite; }
+
+/* New decoration: user-uploaded GIF sprites drifting gently across the scene. */
+@keyframes gif-drift {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(14px, -22px) rotate(6deg); }
+  100% { transform: translate(-10px, 4px) rotate(-4deg); }
+}
+.gif-sprite { position: absolute; width: 64px; height: 64px; object-fit: contain; border-radius: 12px; filter: drop-shadow(0 6px 14px rgba(74, 27, 47, 0.35)); animation: gif-drift ease-in-out infinite alternate; }
+
+/* Dusk zone: background slowly deepens the longer it sits in view — an
+   "it's getting dark, the day is ending" feeling for goodbye / quiet
+   moments, layered on top of the existing background gradient. */
+@keyframes dusk-deepen {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+.dusk-veil { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 50% 20%, rgba(255, 216, 160, 0.14), transparent 55%), linear-gradient(180deg, rgba(10, 8, 20, 0) 0%, rgba(10, 8, 20, 0.55) 100%); animation: dusk-deepen 2.4s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .firefly, .stardust, .rain-drop, .snow, .leaf, .candle-glow, .gif-sprite { display: none; }
+  .dusk-veil { animation: none; opacity: 1; }
+}
+
+/* Final reader polish: keep the book narrow on desktop while preserving a fluid mobile canvas. */
+.reader-book { width: min(100%, 430px); margin-inline: auto; }
+.reader-silence { min-height: 16vh; }
+.story-media img, .story-media video { display: block; max-width: 100%; height: auto; }
+.story-media audio { max-width: 100%; }
+.story-copy,
+.overflow-wrap-anywhere,
+.reader-shell p,
+.reader-shell h1,
+.reader-shell h2,
+.reader-shell h3,
+.admin-shell p,
+.admin-shell td,
+.admin-shell h1,
+.admin-shell h2,
+.admin-shell h3 {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.reader-shell [data-reader-element],
+.reader-shell article,
+.reader-shell section,
+.admin-shell main,
+.admin-shell article,
+.admin-shell form {
+  min-width: 0;
+  max-width: 100%;
+}
+.screenshot-carousel {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.screenshot-carousel::-webkit-scrollbar { display: none; }
+.story-date-ribbon { box-shadow: 0 8px 24px -18px rgba(74,27,47,.55); }
+button, a, input, textarea, select, summary { -webkit-tap-highlight-color: transparent; }
+@media (max-width: 430px) {
+  body { min-width: 0; }
+  .admin-shell input,
+  .admin-shell textarea,
+  .admin-shell select { font-size: 16px; }
+}
+
+/* The reader keeps a faint paper grain without shipping a heavy bitmap. */
+.reader-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: .16;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.13'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+}
+
+.admin-shell input,
+.admin-shell textarea,
+.admin-shell select {
+  background-color: rgba(255,255,255,.82);
+  border-color: rgba(74,27,47,.12);
+  outline: none;
+  transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+}
+.admin-shell input:focus,
+.admin-shell textarea:focus,
+.admin-shell select:focus {
+  background-color: #fff;
+  border-color: rgba(74,27,47,.38);
+  box-shadow: 0 0 0 3px rgba(74,27,47,.07);
+}
+.admin-shell button:focus-visible,
+.admin-shell a:focus-visible,
+.reader-shell button:focus-visible,
+.reader-shell a:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}

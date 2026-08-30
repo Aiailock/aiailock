@@ -1,112 +1,65 @@
-# Обновление проекта через браузер — без терминала
+-- Internal service-role variant used by import-zip. The public/admin wrapper
+-- remains protected by is_admin().
+create or replace function rebuild_special_timeline_internal()
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  inserted_count integer := 0;
+  r record;
+begin
+  delete from timeline_elements where type in ('year_break', 'on_this_day');
 
-Эта инструкция написана для ситуации, когда проект уже находится в GitHub,
-Netlify подключён к репозиторию, а Supabase уже создан. Командная строка не
-нужна.
+  for r in
+    select distinct on (extract(year from sent_at)) sent_at, extract(year from sent_at)::int as year_no
+    from messages
+    where is_system_message = false
+    order by extract(year from sent_at), sent_at
+  loop
+    insert into timeline_elements(type, occurred_at, sort_tiebreak, style, is_published)
+    values ('year_break', r.sent_at, -100, jsonb_build_object('zone','default'), true);
+    inserted_count := inserted_count + 1;
+  end loop;
 
-## Что добавилось
+  for r in
+    select max(m.sent_at) as occurred_at
+    from messages m
+    where m.is_system_message = false
+      and exists (
+        select 1 from messages older
+        where older.id <> m.id
+          and older.is_system_message = false
+          and extract(month from older.sent_at) = extract(month from m.sent_at)
+          and extract(day from older.sent_at) = extract(day from m.sent_at)
+          and older.sent_at < m.sent_at - interval '330 days'
+      )
+    group by extract(month from m.sent_at), extract(day from m.sent_at)
+  loop
+    insert into timeline_elements(type, occurred_at, sort_tiebreak, style, is_published)
+    values ('on_this_day', r.occurred_at, -50, jsonb_build_object('zone','default'), true);
+    inserted_count := inserted_count + 1;
+  end loop;
 
-- настоящее удаление любого элемента истории, а не только «Скрыть»;
-- выбор нескольких элементов и массовые действия: оформление, публикация,
-  скрытие и удаление;
-- рамки теперь работают и на фото, и на текстовых элементах, и в живом preview;
-- шесть новых интерактивов через кнопку `+`: секрет, подарок, письмо,
-  карточка-перевёртыш, проявление фото и обещание;
-- статистика чтения: заходила ли она, сколько раз, максимальный процент,
-  номер и дата последнего прочитанного элемента, достижение финала;
-- 12 вариантов шрифтов и единый шрифт для всей истории;
-- готовые цветовые темы и рабочее изменение палитры без ручного JSON;
-- новая боковая админ-панель на компьютере и удобная прокручиваемая панель на
-  телефоне;
-- вместо ручного UUID сообщения теперь обычный список сообщений;
-- кнопка `+` между элементами всегда видна на телефоне;
-- аккуратная шкала чтения, бумажная фактура и улучшенные интерактивные карточки
-  в reader.
+  return inserted_count;
+end;
+$$;
+revoke all on function rebuild_special_timeline_internal() from public, anon, authenticated;
+grant execute on function rebuild_special_timeline_internal() to service_role;
 
-## Важно перед обновлением
-
-1. Открой текущий репозиторий GitHub.
-2. Нажми **Code → Download ZIP** и сохрани старую версию как резервную копию.
-3. Не загружай в GitHub файл `.env`, папки `node_modules`, `dist` и `.git`.
-   Данные Supabase уже должны находиться в настройках Netlify.
-
-## Шаг 1. Заменить проект в GitHub
-
-1. Скачай готовый архив из сообщения ChatGPT и распакуй его.
-2. Открой папку `aiailock-updated`. Загружать нужно **содержимое этой папки**,
-   а не саму внешнюю папку.
-3. В GitHub открой корень репозитория `Aiailock/aiailock`.
-4. Нажми **Add file → Upload files**.
-5. Перетащи в окно все файлы и папки из распакованного проекта. GitHub заменит
-   одноимённые файлы и добавит новые.
-6. Внизу напиши `Полное обновление reader и admin` и нажми
-   **Commit changes** в ветку `main`.
-
-Если браузер телефона не позволяет выбрать папки, включи «Версия для ПК» или
-загружай тремя частями: сначала папку `src`, затем `supabase`, затем файлы из
-корня. Архив целиком загружать не нужно — GitHub не распакует его сам.
-
-## Шаг 2. Обновить базу Supabase
-
-1. Открой **Supabase → свой проект → SQL Editor**.
-2. Нажми **New query**.
-3. В распакованном проекте открой файл
-   `supabase/migrations/0012_interactions_analytics_admin.sql`.
-4. Скопируй весь текст файла в SQL Editor.
-5. Нажми **Run** один раз.
-6. Должно появиться сообщение об успешном выполнении без красной ошибки.
-
-Миграция не удаляет существующие сообщения, фото, воспоминания или настройки.
-Она добавляет интерактивы, статистику и безопасные массовые действия.
-
-## Шаг 3. Добавить статистику чтения в Supabase
-
-1. Открой **Supabase → Edge Functions**.
-2. Нажми **Deploy a new function → Via Editor**.
-3. Имя функции укажи точно: `reader-analytics`.
-4. Открой в проекте файл
-   `supabase/functions/reader-analytics/index.ts` и скопируй его целиком в
-   редактор Supabase вместо примера.
-5. Если рядом есть переключатель **Verify JWT**, выключи его: функция сама
-   проверяет закрытый reader-token.
-6. Нажми **Deploy function**.
-
-Файл функции специально сделан самостоятельным: при вставке через браузер не
-нужно создавать дополнительные `_shared`-файлы.
-
-## Шаг 4. Дождаться Netlify
-
-Если Netlify уже связан с этим GitHub-репозиторием, после commit он сам начнёт
-новую сборку.
-
-1. Открой **Netlify → проект → Deploys**.
-2. Дождись статуса **Published**.
-3. Переменные остаются прежними:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-4. Никаких новых ключей в Netlify добавлять не нужно.
-
-Если автоматическая сборка не началась, нажми **Trigger deploy → Deploy site**.
-
-## Шаг 5. Быстрая проверка
-
-1. Открой `/admin/login` и войди.
-2. Перейди в **История**.
-3. Выбери два элемента галочками и проверь **Общее оформление**.
-4. Нажми `+` между сообщениями и добавь тестовый **Секрет**.
-5. Открой **Preview** и проверь раскрытие секрета и рамку текста.
-6. Открой обычную reader-ссылку не через Preview, немного пролистай её.
-7. Вернись в Admin → **Чтение** и нажми **Обновить**. Должен появиться визит и
-   процент чтения.
-
-## Если что-то пошло не так
-
-- Сайт работает, но раздел «Чтение» пустой: проверь, что миграция `0012`
-  выполнена и функция называется именно `reader-analytics`.
-- При вызове статистики ошибка 401: открой настройки функции
-  `reader-analytics` и отключи **Verify JWT**.
-- Netlify показывает старую версию: открой Deploys и запусти
-  **Trigger deploy → Clear cache and deploy site**.
-- В reader ошибка после обновления: сначала посмотри красный текст последнего
-  deploy Netlify; старый ZIP из первого шага остаётся резервной копией.
-
+create or replace function rebuild_special_timeline()
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if not is_admin() then
+    raise exception 'not authorized';
+  end if;
+  return rebuild_special_timeline_internal();
+end;
+$$;
+revoke all on function rebuild_special_timeline() from public;
+grant execute on function rebuild_special_timeline() to authenticated;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AudioLines, FileText, Image as ImageIcon, Play, Volume2 } from 'lucide-react';
-import { fetchMediaUrl } from '@/lib/readerApi';
+import { fetchMediaUrl, peekMediaUrl, readerMediaInput } from '@/lib/readerApi';
 import type { PublicTimelineRow } from '@/lib/readerApi';
 import { safeRemoteUrl } from '@/lib/safeUrl';
 
@@ -8,8 +8,10 @@ interface Props { row: PublicTimelineRow; token: string; }
 
 export default function ReaderMedia({ row, token }: Props) {
   const externalUrl = safeRemoteUrl(row.style?.externalMediaUrl);
-  const [url, setUrl] = useState<string | null>(externalUrl);
-  const [thumb, setThumb] = useState<string | null>(null);
+  const input = readerMediaInput(row);
+  const warmed = peekMediaUrl(input);
+  const [url, setUrl] = useState<string | null>(externalUrl ?? warmed?.url ?? null);
+  const [thumb, setThumb] = useState<string | null>(warmed?.thumbnailUrl ?? null);
   const [error, setError] = useState(false);
   const [nearViewport, setNearViewport] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -29,18 +31,14 @@ export default function ReaderMedia({ row, token }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    const id = row.media_id;
-    const screenshotId = row.screenshot_id;
-    const memoryId = row.memory_id;
-    if (!nearViewport || externalUrl || (!id && !screenshotId && !memoryId) || url) return;
-    const input = id ? { mediaId: id } : screenshotId ? { screenshotId: screenshotId } : { memoryId: memoryId as string };
+    if (!nearViewport || externalUrl || !input || url) return;
     fetchMediaUrl(input, token)
       .then((result) => {
         if (!cancelled) { setUrl(result.url); setThumb(result.thumbnailUrl); }
       })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
-  }, [nearViewport, row.media_id, row.screenshot_id, row.memory_id, token, url, externalUrl]);
+  }, [nearViewport, input, token, url, externalUrl]);
 
   const kind = externalUrl ? 'photo' : row.media_kind ?? ((row.screenshot_id || row.memory_photo_storage_path) ? 'photo' : 'document');
   return (

@@ -46,7 +46,10 @@ export const DECORATION_OPTIONS: StyleOption[] = [
 ];
 
 export const ZONE_OPTIONS: StyleOption[] = [
-  { id: 'default', label: 'Обычный (кремовый)' },
+  { id: 'default', label: 'Графитовая книга' },
+  { id: 'dawn', label: 'Рассвет (розово-сливовый)' },
+  { id: 'day', label: 'День (глубокий бирюзовый)' },
+  { id: 'evening', label: 'Закат (коралловый)' },
   { id: 'romantic', label: 'Романтичный (розовый)' },
   { id: 'night', label: 'Ночь' },
   { id: 'burgundy', label: 'Бордовый / глубокий' },
@@ -83,6 +86,23 @@ export const INTERACTION_OPTIONS: StyleOption[] = [
   { id: 'flip', label: 'Карточка-перевёртыш', hint: 'Сюрприз на обратной стороне' },
   { id: 'photo-reveal', label: 'Проявить фото', hint: 'Фото появляется только после нажатия' },
   { id: 'promise', label: 'Обещание', hint: 'Небольшой сердечный ритуал' },
+  { id: 'question', label: 'Вопрос', hint: 'Она выбирает один из двух ответов' },
+  { id: 'choice', label: 'Развилка', hint: 'Два варианта ведут к разным посланиям' },
+  { id: 'scale', label: 'Шкала чувств', hint: 'Можно выбрать значение от 1 до 10' },
+  { id: 'scratch', label: 'Стереть защитный слой', hint: 'Секрет проявляется после нескольких касаний' },
+  { id: 'wish', label: 'Загадать желание', hint: 'Маленький звёздный ритуал' },
+  { id: 'constellation', label: 'Собрать созвездие', hint: 'Нужно зажечь пять звёзд' },
+];
+
+export const ANIMATION_OPTIONS: StyleOption[] = [
+  { id: 'fade-up', label: 'Мягко снизу' },
+  { id: 'fade', label: 'Растворение' },
+  { id: 'slide-left', label: 'Кадр слева' },
+  { id: 'slide-right', label: 'Кадр справа' },
+  { id: 'zoom', label: 'Приближение' },
+  { id: 'blur', label: 'Из тумана' },
+  { id: 'flip', label: 'Переворот страницы' },
+  { id: 'words', label: 'Слова по очереди', hint: 'Для коротких важных фраз' },
 ];
 
 export const DATE_STYLE_OPTIONS: StyleOption[] = [

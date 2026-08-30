@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Heart, LockKeyhole } from 'lucide-react';
+import { ArrowDown, Heart, LockKeyhole } from 'lucide-react';
 import TimelineStory from '@/components/reader/TimelineStory';
 import { fetchReaderSettings, requestReaderAccess } from '@/lib/readerApi';
 import { ReaderSettingsContext, readDisplaySettingsFromTheme, type ReaderDisplaySettings } from '@/lib/readerSettingsContext';
@@ -82,7 +82,7 @@ export default function ReaderPage() {
     }
   }
 
-  if (loading) return <div className="min-h-screen bg-[#0B0B0D]" />;
+  if (loading) return <div className="flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#09090B] px-7 text-center text-[#F4EFE6]"><div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(173,91,126,.2),transparent_34%)]"/><div className="relative"><div className="mx-auto flex h-14 w-14 animate-pulse items-center justify-center rounded-full border border-gold/25 text-gold"><Heart size={20} strokeWidth={1.2}/></div><div className="mt-6 font-serif text-3xl">Открываю историю</div><div className="mt-3 text-[10px] uppercase tracking-[3px] text-white/30">первая страница уже близко</div></div></div>;
 
   if (requiresPassword && !token) {
     return (
@@ -116,7 +116,7 @@ export default function ReaderPage() {
         <Heart size={21} strokeWidth={1.2} className="relative mb-7 text-gold/75" />
         <h1 className="relative max-w-[390px] overflow-wrap-anywhere font-serif text-[50px] font-medium leading-[1.04] tracking-wide text-[#F4EFE6] drop-shadow-lg sm:text-6xl">{title}</h1>
         <p className="relative mt-6 max-w-xs font-script text-2xl leading-relaxed text-[#F4EFE6]/62">{displaySettings.coverSubtitle}</p>
-        <div className="relative mt-16 h-16 w-px bg-gradient-to-b from-gold/45 to-transparent" />
+        <button type="button" onClick={() => document.getElementById('story-start')?.scrollIntoView({ behavior: 'smooth' })} className="relative mt-14 flex flex-col items-center gap-3 text-[9px] uppercase tracking-[3px] text-gold/55"><span>начать путешествие</span><span className="flex h-10 w-10 items-center justify-center rounded-full border border-gold/20"><ArrowDown size={15}/></span></button>
       </section>
       {empty ? (
         <section className="mx-auto flex min-h-[45vh] max-w-page items-center justify-center px-6 pb-32 text-center">
@@ -126,7 +126,7 @@ export default function ReaderPage() {
               <br />Но место для неё уже есть.</p>
           </div>
         </section>
-      ) : <ReaderSettingsContext.Provider value={displaySettings}><TimelineStory token={token} track={!isPreview} /></ReaderSettingsContext.Provider>}
+      ) : <div id="story-start"><ReaderSettingsContext.Provider value={displaySettings}><TimelineStory token={token} track={!isPreview} /></ReaderSettingsContext.Provider></div>}
       <div className="px-6 pb-20 pt-8 text-center">
         <div className="mx-auto h-px w-16 bg-gold/45" />
         <p className="mt-4 font-script text-2xl text-[#F4EFE6]/55">{displaySettings.closingMessage}</p>

@@ -4,7 +4,9 @@ import { verifyReaderToken } from '../_shared/readerToken.ts';
 
 declare const Deno: { serve: (h: (r: Request) => Response | Promise<Response>) => void };
 
-const SIGNED_URL_TTL_SECONDS = 300;
+// Journey Reader warms private photos before the first page is shown. Six
+// hours covers a long reading session without making links permanent.
+const SIGNED_URL_TTL_SECONDS = 60 * 60 * 6;
 const BUCKET_BY_KIND: Record<string, string> = {
   photo: 'photos',
   video: 'videos',

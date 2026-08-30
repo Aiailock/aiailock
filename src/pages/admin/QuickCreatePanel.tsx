@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { BookHeart, Check, ImagePlus, Layers3, Save, Sparkles, WandSparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import StyleEditor, { type StyleValue } from './StyleEditor';
+import { INTERACTION_OPTIONS } from '@/lib/styleOptions';
 
 type CreateKind = 'note' | 'memory' | 'special' | 'chapter' | 'quote' | 'pause' | 'album' | 'gif' | 'interactive';
 
@@ -39,11 +40,15 @@ interface Draft {
   albumLayout: string;
   reactionEmoji: string;
   reactionText: string;
+  optionA: string;
+  optionB: string;
+  resultA: string;
+  resultB: string;
 }
 
 const DRAFT_KEY = 'for-you-mobile-studio-draft-v1';
 const nowForInput = () => new Date().toISOString().slice(0, 16);
-const emptyDraft = (): Draft => ({ kind: 'note', title: '', body: '', occurredAt: nowForInput(), style: { dateStyle: 'line', spacing: 'normal' }, published: true, visibleFrom: '', interaction: 'gift', gifUrl: '', albumLayout: 'carousel', reactionEmoji: '❤', reactionText: '' });
+const emptyDraft = (): Draft => ({ kind: 'note', title: '', body: '', occurredAt: nowForInput(), style: { dateStyle: 'line', spacing: 'normal', animation: 'fade-up' }, published: true, visibleFrom: '', interaction: 'gift', gifUrl: '', albumLayout: 'carousel', reactionEmoji: '❤', reactionText: '', optionA: 'Да', optionB: 'Очень', resultA: '', resultB: '' });
 
 function readDraft(): Draft {
   try {
@@ -155,7 +160,12 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         const metadata = draft.kind === 'special'
           ? { kind: 'special' }
           : draft.kind === 'interactive'
-            ? { kind: 'interactive', interaction: draft.interaction }
+            ? {
+                kind: 'interactive',
+                interaction: draft.interaction,
+                options: [draft.optionA.trim() || 'Да', draft.optionB.trim() || 'Очень'],
+                results: [draft.resultA.trim() || draft.body.trim(), draft.resultB.trim() || draft.body.trim()],
+              }
             : draft.kind === 'gif' ? { kind: 'gif' } : {};
         if (isGif && !draft.body.trim()) style.hideText = true;
         const { error } = await supabase.from('memories').insert({
@@ -197,7 +207,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         {(draft.kind === 'memory' || draft.kind === 'special' || draft.kind === 'gif' || draft.kind === 'interactive' || draft.kind === 'album') && <label className="mt-3 block rounded-xl border border-dashed border-burgundy/15 bg-[#FBF8F5] p-3 text-sm"><span className="flex items-center gap-2"><ImagePlus size={16} />{draft.kind === 'album' ? 'Скриншоты (можно выбрать сразу несколько)' : draft.kind === 'gif' ? 'GIF-файл' : 'Фото или GIF (необязательно)'}</span><input type="file" multiple={draft.kind === 'album'} accept={draft.kind === 'gif' ? 'image/gif,.gif' : 'image/*,.gif'} onChange={(event) => setFiles(Array.from(event.target.files ?? []))} className="mt-2 block w-full text-xs" />{files.length > 0 && <span className="mt-2 block text-[11px] text-burgundy/60">Выбрано: {files.length}</span>}</label>}
 
         {draft.kind === 'gif' && <label className="mt-3 block text-sm">Или прямая ссылка на GIF<input value={draft.gifUrl} inputMode="url" onChange={(event) => patch({ gifUrl: event.target.value })} placeholder="https://…/animation.gif" className="mt-2 w-full rounded-xl border p-3" /></label>}
-        {draft.kind === 'interactive' && <label className="mt-3 block text-sm">Как открывается<select value={draft.interaction} onChange={(event) => patch({ interaction: event.target.value })} className="mt-2 w-full rounded-xl border p-3"><option value="gift">Подарок</option><option value="letter">Письмо</option><option value="spoiler">Секрет</option><option value="flip">Перевёртыш</option><option value="photo-reveal">Проявить фото</option><option value="promise">Обещание</option></select></label>}
+        {draft.kind === 'interactive' && <div className="mt-3 space-y-3"><label className="block text-sm">Как открывается<select value={draft.interaction} onChange={(event) => patch({ interaction: event.target.value })} className="mt-2 w-full rounded-xl border p-3">{INTERACTION_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.hint}</option>)}</select></label>{['question','choice','scale'].includes(draft.interaction) && <div className="rounded-2xl border border-burgundy/10 bg-[#FBF8F5] p-3"><div className="text-xs font-medium text-burgundy">{draft.interaction === 'scale' ? 'Подписи краёв шкалы' : 'Два варианта ответа'}</div><div className="mt-2 grid grid-cols-2 gap-2"><input value={draft.optionA} onChange={(event) => patch({ optionA: event.target.value })} placeholder={draft.interaction === 'scale' ? 'Немного' : 'Первый ответ'} className="min-w-0 rounded-xl border p-3 text-sm"/><input value={draft.optionB} onChange={(event) => patch({ optionB: event.target.value })} placeholder={draft.interaction === 'scale' ? 'Бесконечно' : 'Второй ответ'} className="min-w-0 rounded-xl border p-3 text-sm"/></div>{draft.interaction !== 'scale' && <div className="mt-2 grid gap-2"><input value={draft.resultA} onChange={(event) => patch({ resultA: event.target.value })} placeholder="Ответ после первого выбора (необязательно)" className="rounded-xl border p-3 text-sm"/><input value={draft.resultB} onChange={(event) => patch({ resultB: event.target.value })} placeholder="Ответ после второго выбора (необязательно)" className="rounded-xl border p-3 text-sm"/></div>}</div>}</div>}
         {draft.kind === 'album' && <div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-sm">Оформление альбома<select value={draft.albumLayout} onChange={(event) => patch({ albumLayout: event.target.value })} className="mt-2 w-full rounded-xl border p-3"><option value="carousel">Карусель — листать пальцем</option><option value="stack">Стопка снимков</option><option value="collage">Коллаж</option></select></label><label className="text-sm">Твоя реакция<div className="mt-2 flex gap-2"><select value={draft.reactionEmoji} onChange={(event) => patch({ reactionEmoji: event.target.value })} className="w-20 rounded-xl border p-3"><option>❤</option><option>🥹</option><option>😂</option><option>✨</option><option>💔</option></select><input value={draft.reactionText} onChange={(event) => patch({ reactionText: event.target.value })} placeholder="например: до сих пор улыбаюсь" className="min-w-0 flex-1 rounded-xl border p-3" /></div></label></div>}
 
         <div className="mt-4 rounded-2xl bg-black/[.025] p-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.published} onChange={(event) => patch({ published: event.target.checked })} disabled={Boolean(draft.visibleFrom)} /> Сразу показать ей в reader</label><label className="mt-3 block text-xs text-burgundy/65">Или открыть автоматически позже<input type="datetime-local" value={draft.visibleFrom} onChange={(event) => patch({ visibleFrom: event.target.value })} className="mt-2 w-full rounded-xl border p-3 text-sm" /><span className="mt-1 block text-[10px] opacity-60">Если дата указана, сцена останется скрытой до этого момента.</span></label></div>

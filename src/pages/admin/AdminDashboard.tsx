@@ -62,6 +62,7 @@ interface TimelineRow {
   id: string;
   type: string;
   occurred_at: string;
+  display_order: number;
   message_id: string | null;
   media_id: string | null;
   memory_id: string | null;
@@ -809,7 +810,13 @@ type InsertKind =
   | "letter"
   | "flip"
   | "photo-reveal"
-  | "promise";
+  | "promise"
+  | "question"
+  | "choice"
+  | "scale"
+  | "scratch"
+  | "wish"
+  | "constellation";
 const insertKindLabel: Record<InsertKind, string> = {
   message: "Сообщение",
   chapter: "Глава",
@@ -825,6 +832,12 @@ const insertKindLabel: Record<InsertKind, string> = {
   flip: "Перевёртыш",
   "photo-reveal": "Проявить фото",
   promise: "Обещание",
+  question: "Вопрос",
+  choice: "Развилка",
+  scale: "Шкала чувств",
+  scratch: "Стереть слой",
+  wish: "Желание",
+  constellation: "Созвездие",
 };
 const interactionKinds = new Set<InsertKind>([
   "spoiler",
@@ -833,6 +846,12 @@ const interactionKinds = new Set<InsertKind>([
   "flip",
   "photo-reveal",
   "promise",
+  "question",
+  "choice",
+  "scale",
+  "scratch",
+  "wish",
+  "constellation",
 ]);
 
 // Тонкая полоса-разделитель между двумя карточками истории: клик по «+»
@@ -939,6 +958,12 @@ function InsertGap({
                   "flip",
                   "photo-reveal",
                   "promise",
+                  "question",
+                  "choice",
+                  "scale",
+                  "scratch",
+                  "wish",
+                  "constellation",
                 ] as InsertKind[]
               ).map((k) => (
                 <button
@@ -1029,6 +1054,8 @@ function InsertGap({
 
 function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   const [rows, setRows] = useState<TimelineRow[]>([]);
+  const [previousBoundary, setPreviousBoundary] = useState<TimelineRow | null>(null);
+  const [nextBoundary, setNextBoundary] = useState<TimelineRow | null>(null);
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [filter, setFilter] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
@@ -1083,14 +1110,18 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   // порядок карточек в админке совпадает с тем, что увидит читатель, и
   // перетаскивание/вставка «между двумя» интуитивно понятны.
   const load = useCallback(async () => {
+    const pageStart = page * pageSize;
+    const queryStart = Math.max(0, pageStart - 1);
+    const queryEnd = pageStart + pageSize;
     const [{ data: elements }, { data: msgs }] = await Promise.all([
       supabase
         .from("timeline_elements")
         .select(
-          "id,type,occurred_at,message_id,media_id,memory_id,screenshot_id,style,mood,importance,is_published,visible_from,metadata",
+          "id,type,occurred_at,display_order,message_id,media_id,memory_id,screenshot_id,style,mood,importance,is_published,visible_from,metadata",
         )
-        .order("occurred_at", { ascending: true })
-        .range(page * pageSize, page * pageSize + pageSize - 1),
+        .order("display_order", { ascending: true })
+        .order("id", { ascending: true })
+        .range(queryStart, queryEnd),
       supabase
         .from("messages")
         .select("id,sent_at,sender_name,original_text,display_text")
@@ -1098,7 +1129,11 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
         .order("sent_at", { ascending: false })
         .limit(1200),
     ]);
-    const els = (elements ?? []) as TimelineRow[];
+    const all = (elements ?? []) as TimelineRow[];
+    const offset = page > 0 ? 1 : 0;
+    const els = all.slice(offset, offset + pageSize);
+    setPreviousBoundary(page > 0 ? all[0] ?? null : null);
+    setNextBoundary(all[offset + pageSize] ?? null);
     setRows(els);
     setMessages((msgs ?? []) as MessageRow[]);
     const memIds = els
@@ -1315,40 +1350,20 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     await load();
   }
 
-  // Двигает элемент строго между `prev` и `next`. Для сообщений/медиа дата
-  // хранится только в timeline_elements — её и меняем напрямую. У
-  // воспоминаний/скриншотов дата и позиция-якорь живут в исходной таблице
-  // (memories/screenshots), а в timeline_elements её пересчитывает триггер —
-  // поэтому для них обновляем исходную таблицу и сбрасываем старый якорь
-  // «после сообщения», иначе триггер тут же вернёт элемент на старое место.
+  // Порядок reader хранится отдельно от реальной даты. Поэтому перетаскивание
+  // больше не подменяет occurred_at и буквально повторяется на публичной
+  // странице — даже когда несколько сообщений имеют одинаковое время.
   async function moveElement(
     row: TimelineRow,
     prev: TimelineRow | null,
     next: TimelineRow | null,
   ) {
-    const at = midpointIso(
-      prev?.occurred_at ?? null,
-      next?.occurred_at ?? null,
-    );
     setBusyId(row.id);
-    const result = row.memory_id
-      ? await supabase
-          .from("memories")
-          .update({ occurred_at: at, place_after_message_id: null })
-          .eq("id", row.memory_id)
-      : row.screenshot_id
-        ? await supabase
-            .from("screenshots")
-            .update({
-              occurred_at: at,
-              place_after_message_id: null,
-              position: "custom",
-            })
-            .eq("id", row.screenshot_id)
-        : await supabase
-            .from("timeline_elements")
-            .update({ occurred_at: at })
-            .eq("id", row.id);
+    const result = await supabase.rpc("admin_place_timeline_element", {
+      p_id: row.id,
+      p_prev_id: prev?.id ?? null,
+      p_next_id: next?.id ?? null,
+    });
     setBusyId(null);
     if (result.error) window.alert(result.error.message);
     else await load();
@@ -1360,9 +1375,9 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   ): { prev: TimelineRow | null; next: TimelineRow | null } {
     const ordered = visible.filter((r) => r.id !== excludeId);
     if (targetId === "end")
-      return { prev: ordered[ordered.length - 1] ?? null, next: null };
+      return { prev: ordered[ordered.length - 1] ?? previousBoundary, next: nextBoundary };
     const idx = ordered.findIndex((r) => r.id === targetId);
-    return { prev: ordered[idx - 1] ?? null, next: ordered[idx] ?? null };
+    return { prev: ordered[idx - 1] ?? previousBoundary, next: ordered[idx] ?? null };
   }
   function onDrop(targetId: string | "end") {
     setDragOverId(null);
@@ -1416,8 +1431,8 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   async function submitInsert() {
     if (!insertGap || !insertKind) return;
     setInsertError("");
-    const prevRow = rows.find((r) => r.id === insertGap.prevId) ?? null;
-    const nextRow = rows.find((r) => r.id === insertGap.nextId) ?? null;
+    const prevRow = rows.find((r) => r.id === insertGap.prevId) ?? (previousBoundary?.id === insertGap.prevId ? previousBoundary : null);
+    const nextRow = rows.find((r) => r.id === insertGap.nextId) ?? (nextBoundary?.id === insertGap.nextId ? nextBoundary : null);
     const at = midpointIso(
       prevRow?.occurred_at ?? null,
       nextRow?.occurred_at ?? null,
@@ -1513,7 +1528,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
             : insertKind === "gif"
               ? { kind: "gif" }
             : interactive
-              ? { kind: "interactive", interaction: insertKind }
+              ? { kind: "interactive", interaction: insertKind, options: ["Да", "Очень"], results: [insertBody.trim(), insertBody.trim()] }
               : {};
         const style = insertKind === "gif"
           ? { zone: "gif", frame: "minimal", spacing: "cinematic", hideText: !insertBody.trim() }
@@ -1537,6 +1552,29 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
           });
         if (error) throw error;
       }
+      const sourceColumn = insertKind === "message"
+        ? "message_id"
+        : insertKind === "screenshot"
+          ? "screenshot_id"
+          : (["quote", "pause", "chapter"] as InsertKind[]).includes(insertKind)
+            ? null
+            : "memory_id";
+      let timelineElementId = id;
+      if (sourceColumn) {
+        const { data: createdTimeline, error: lookupError } = await supabase
+          .from("timeline_elements")
+          .select("id")
+          .eq(sourceColumn, id)
+          .single();
+        if (lookupError) throw lookupError;
+        timelineElementId = createdTimeline.id;
+      }
+      const { error: orderError } = await supabase.rpc("admin_place_timeline_element", {
+        p_id: timelineElementId,
+        p_prev_id: insertGap.prevId,
+        p_next_id: insertGap.nextId,
+      });
+      if (orderError) throw orderError;
       setInsertGap(null);
       setInsertKind(null);
       await load();
@@ -1650,7 +1688,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
       )}
       <div className="mt-5">
         <InsertGap
-          prevId={null}
+          prevId={previousBoundary?.id ?? null}
           nextId={visible[0]?.id ?? null}
           reorderable={reorderable}
           insertGap={insertGap}
@@ -1996,7 +2034,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
               </article>
               <InsertGap
                 prevId={row.id}
-                nextId={visible[i + 1]?.id ?? null}
+                nextId={visible[i + 1]?.id ?? nextBoundary?.id ?? null}
                 reorderable={reorderable}
                 insertGap={insertGap}
                 insertKind={insertKind}
@@ -2042,7 +2080,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
         </button>
         <span className="opacity-45">страница {page + 1}</span>
         <button
-          disabled={rows.length < pageSize}
+          disabled={!nextBoundary}
           onClick={() => setPage((x) => x + 1)}
           className="rounded-lg border px-3 py-2 disabled:opacity-30"
         >

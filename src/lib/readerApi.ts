@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient';
 
 export interface PublicTimelineCursor {
+  displayOrder: number;
   occurredAt: string;
   sortTiebreak: number;
   id: string;
@@ -11,6 +12,7 @@ export interface PublicTimelineRow {
   type: string;
   occurred_at: string;
   sort_tiebreak: number;
+  display_order: number;
   style: Record<string, unknown> | null;
   mood: string | null;
   is_published: boolean;
@@ -100,6 +102,11 @@ export async function fetchPublicTimeline(cursor: PublicTimelineCursor | null, t
   };
 }
 
+export function comparePublicTimelineRows(a: PublicTimelineRow, b: PublicTimelineRow): number {
+  const order = Number(a.display_order ?? 0) - Number(b.display_order ?? 0);
+  return order || a.element_id.localeCompare(b.element_id);
+}
+
 export async function fetchResumeTimeline(elementId: string, token: string): Promise<{
   elements: PublicTimelineRow[];
   hasMore: boolean;
@@ -153,11 +160,103 @@ export async function recordReaderReaction(input: {
   return { emoji: String(data.emoji), count: Number(data.count ?? 1) };
 }
 
-export async function fetchMediaUrl(input: { mediaId?: string; screenshotId?: string; memoryId?: string }, token: string): Promise<{ url: string; thumbnailUrl: string | null }> {
-  const { data, error } = await supabase.functions.invoke('get-media-url', {
+export type ReaderMediaInput = { mediaId?: string; screenshotId?: string; memoryId?: string };
+export interface ReaderMediaUrl { url: string; thumbnailUrl: string | null }
+
+const mediaUrlCache = new Map<string, ReaderMediaUrl>();
+const mediaUrlRequests = new Map<string, Promise<ReaderMediaUrl>>();
+
+function mediaInputKey(input: ReaderMediaInput) {
+  if (input.mediaId) return `media:${input.mediaId}`;
+  if (input.screenshotId) return `screenshot:${input.screenshotId}`;
+  return `memory:${input.memoryId ?? ''}`;
+}
+
+export function readerMediaInput(row: PublicTimelineRow): ReaderMediaInput | null {
+  if (row.media_id) return { mediaId: row.media_id };
+  if (row.screenshot_id) return { screenshotId: row.screenshot_id };
+  if (row.memory_id && row.memory_photo_storage_path) return { memoryId: row.memory_id };
+  return null;
+}
+
+export function peekMediaUrl(input: ReaderMediaInput | null): ReaderMediaUrl | null {
+  return input ? mediaUrlCache.get(mediaInputKey(input)) ?? null : null;
+}
+
+export async function fetchMediaUrl(input: ReaderMediaInput, token: string): Promise<ReaderMediaUrl> {
+  const key = mediaInputKey(input);
+  const cached = mediaUrlCache.get(key);
+  if (cached) return cached;
+  const pending = mediaUrlRequests.get(key);
+  if (pending) return pending;
+
+  const request = supabase.functions.invoke('get-media-url', {
     body: input,
     headers: token ? { 'x-reader-access-token': token } : undefined,
+  }).then(({ data, error }) => {
+    if (error || data?.error || !data?.url) throw new Error(error?.message ?? data?.error ?? 'Не удалось открыть медиа.');
+    const result = { url: String(data.url), thumbnailUrl: data.thumbnailUrl ? String(data.thumbnailUrl) : null };
+    mediaUrlCache.set(key, result);
+    return result;
+  }).finally(() => mediaUrlRequests.delete(key));
+
+  mediaUrlRequests.set(key, request);
+  return request;
+}
+
+function warmImage(url: string): Promise<void> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    const done = () => resolve();
+    const timeout = window.setTimeout(done, 15000);
+    image.onload = () => { window.clearTimeout(timeout); done(); };
+    image.onerror = () => { window.clearTimeout(timeout); done(); };
+    image.decoding = 'async';
+    image.src = url;
+    if (image.complete) { window.clearTimeout(timeout); done(); }
   });
-  if (error || data?.error || !data?.url) throw new Error(error?.message ?? data?.error ?? 'Не удалось открыть медиа.');
-  return { url: String(data.url), thumbnailUrl: data.thumbnailUrl ? String(data.thumbnailUrl) : null };
+}
+
+export async function preloadTimelineMedia(
+  rows: PublicTimelineRow[],
+  token: string,
+  onProgress?: (completed: number, total: number) => void,
+): Promise<void> {
+  const tasks = new Map<string, () => Promise<void>>();
+
+  for (const row of rows) {
+    const external = typeof row.style?.externalMediaUrl === 'string' ? row.style.externalMediaUrl : '';
+    if (/^https?:\/\//i.test(external)) tasks.set(`external:${external}`, () => warmImage(external));
+
+    const input = readerMediaInput(row);
+    if (!input) continue;
+    const kind = row.media_kind ?? ((row.screenshot_id || row.memory_photo_storage_path) ? 'photo' : 'document');
+    // Video/audio/document URLs are intentionally requested only when they
+    // approach the viewport: their private signed links should not expire
+    // while the reader is still near the beginning of a long story.
+    if (kind !== 'photo' && kind !== 'sticker' && !row.screenshot_id) continue;
+    const key = mediaInputKey(input);
+    tasks.set(key, async () => {
+      const result = await fetchMediaUrl(input, token);
+      if (kind === 'photo' || kind === 'sticker' || row.screenshot_id) await warmImage(result.url);
+      else if (result.thumbnailUrl) await warmImage(result.thumbnailUrl);
+    });
+  }
+
+  const queue = Array.from(tasks.values());
+  const total = queue.length;
+  let index = 0;
+  let completed = 0;
+  onProgress?.(0, total);
+
+  async function worker() {
+    while (index < queue.length) {
+      const task = queue[index++];
+      try { await task(); } catch { /* one broken file must not block the book */ }
+      completed += 1;
+      onProgress?.(completed, total);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(4, Math.max(1, total)) }, () => worker()));
 }

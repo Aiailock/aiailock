@@ -194,6 +194,33 @@ button, a, input, textarea, select, summary { -webkit-tap-highlight-color: trans
 .reader-shell ::selection { background: rgba(201,160,99,.32); color: #fffaf1; }
 .reader-shell [data-reader-element] { background: #0B0B0D; }
 
+/* Story zones now feel like connected places instead of identical black
+   cards. The overlap hides hard seams while each article keeps its own mood. */
+.story-atmosphere {
+  isolation: isolate;
+  box-shadow: inset 0 28px 34px -34px rgba(0,0,0,.8), inset 0 -28px 34px -34px rgba(0,0,0,.82);
+}
+.story-atmosphere::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 48%, rgba(255,255,255,.035), transparent 52%);
+}
+
+/* Reader typography controls from the journey map. */
+html[data-reader-text='small'] .story-copy p { font-size: 19px !important; line-height: 1.62 !important; }
+html[data-reader-text='large'] .story-copy p { font-size: 27px !important; line-height: 1.68 !important; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .story-atmosphere[data-has-background='false'] { background-size: 100% 115% !important; animation: atmosphere-breathe 12s ease-in-out infinite alternate; }
+}
+@keyframes atmosphere-breathe {
+  from { background-position: center 0%; }
+  to { background-position: center 100%; }
+}
+
 .admin-shell input,
 .admin-shell textarea,
 .admin-shell select {

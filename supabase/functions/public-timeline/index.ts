@@ -36,33 +36,31 @@ Deno.serve(async (req) => {
       ? body.resumeElementId
       : null;
     const cursor = body.cursor && typeof body.cursor === 'object' ? body.cursor as {
-      occurredAt?: string;
-      sortTiebreak?: number;
+      displayOrder?: number;
       id?: string;
     } : undefined;
 
     let query = db
       .from('reader_timeline_data')
       .select('*')
-      .order('occurred_at', { ascending: true })
-      .order('sort_tiebreak', { ascending: true })
+      .order('display_order', { ascending: true })
       .order('element_id', { ascending: true })
       .limit(PAGE_SIZE + 1);
 
     if (resumeElementId) {
       const { data: target, error: targetError } = await db
         .from('reader_timeline_data')
-        .select('occurred_at,sort_tiebreak,element_id')
+        .select('display_order,element_id')
         .eq('element_id', resumeElementId)
         .maybeSingle();
       if (targetError) throw new Error(targetError.message);
       if (!target) throw new HttpError(404, 'Сохранённое место больше недоступно. Начни чтение с текущей версии истории.');
-      if (target?.occurred_at) query = query.or(
-        `occurred_at.gt.${target.occurred_at},and(occurred_at.eq.${target.occurred_at},sort_tiebreak.gt.${target.sort_tiebreak}),and(occurred_at.eq.${target.occurred_at},sort_tiebreak.eq.${target.sort_tiebreak},element_id.gte.${target.element_id})`,
+      if (typeof target?.display_order === 'number') query = query.or(
+        `display_order.gt.${target.display_order},and(display_order.eq.${target.display_order},element_id.gte.${target.element_id})`,
       );
-    } else if (cursor?.occurredAt && typeof cursor.sortTiebreak === 'number' && cursor.id) {
+    } else if (typeof cursor?.displayOrder === 'number' && cursor.id) {
       query = query.or(
-        `occurred_at.gt.${cursor.occurredAt},and(occurred_at.eq.${cursor.occurredAt},sort_tiebreak.gt.${cursor.sortTiebreak}),and(occurred_at.eq.${cursor.occurredAt},sort_tiebreak.eq.${cursor.sortTiebreak},element_id.gt.${cursor.id})`,
+        `display_order.gt.${cursor.displayOrder},and(display_order.eq.${cursor.displayOrder},element_id.gt.${cursor.id})`,
       );
     }
 
@@ -78,6 +76,7 @@ Deno.serve(async (req) => {
       elements: page,
       hasMore,
       nextCursor: last ? {
+        displayOrder: last.display_order,
         occurredAt: last.occurred_at,
         sortTiebreak: last.sort_tiebreak,
         id: last.element_id,

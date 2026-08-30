@@ -3,7 +3,7 @@ import { Sparkles } from 'lucide-react';
 import { Frame, bgByZone } from '@/components/reader/StoryElement';
 import EffectsLayer from '@/components/reader/EffectsLayer';
 import DateStamp from '@/components/reader/DateStamp';
-import { ALIGN_OPTIONS, DATE_STYLE_OPTIONS, DECORATION_OPTIONS, FONT_OPTIONS, FRAME_OPTIONS, SPACING_OPTIONS, ZONE_OPTIONS } from '@/lib/styleOptions';
+import { ALIGN_OPTIONS, ANIMATION_OPTIONS, DATE_STYLE_OPTIONS, DECORATION_OPTIONS, FONT_OPTIONS, FRAME_OPTIONS, SPACING_OPTIONS, ZONE_OPTIONS } from '@/lib/styleOptions';
 import { TIME_FORMAT_OPTIONS } from '@/lib/readerSettingsContext';
 import { safeRemoteUrl } from '@/lib/safeUrl';
 
@@ -22,6 +22,7 @@ export interface StyleValue {
   hideTime?: boolean;
   textAlign?: string;
   spacing?: string;
+  animation?: string;
   backgroundImageUrl?: string;
   backgroundPosition?: string;
   backgroundOverlay?: number;
@@ -55,6 +56,7 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
   const dateFont = typeof value.dateFont === 'string' ? value.dateFont : 'sans';
   const textAlign = typeof value.textAlign === 'string' ? value.textAlign : 'left';
   const spacing = typeof value.spacing === 'string' ? value.spacing : 'normal';
+  const animation = typeof value.animation === 'string' ? value.animation : 'fade-up';
   const backgroundImageUrl = typeof value.backgroundImageUrl === 'string' ? value.backgroundImageUrl : '';
   const backgroundPosition = typeof value.backgroundPosition === 'string' ? value.backgroundPosition : 'center';
   const backgroundOverlay = typeof value.backgroundOverlay === 'number' ? value.backgroundOverlay : 46;
@@ -126,6 +128,12 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
           <span className="opacity-60">Фон / настроение сцены</span>
           <select value={zone} onChange={(e) => patch({ zone: e.target.value })} className="mt-1 w-full rounded-lg border p-2 text-sm">
             {ZONE_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        </label>
+        <label className="block text-xs">
+          <span className="opacity-60">Анимация появления</span>
+          <select value={animation} onChange={(e) => patch({ animation: e.target.value })} className="mt-1 w-full rounded-lg border p-2 text-sm">
+            {ANIMATION_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}{o.hint ? ` — ${o.hint}` : ''}</option>)}
           </select>
         </label>
         <label className="block text-xs">

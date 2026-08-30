@@ -21,21 +21,24 @@ const moodLabel: Record<string, string> = {
 };
 
 export const bgByZone: Record<string, string> = {
-  default: 'linear-gradient(180deg,#0B0B0D,#151216)',
-  romantic: 'linear-gradient(180deg,#170D12,#2A101B)',
-  night: 'linear-gradient(180deg,#14101C,#08080D)',
-  burgundy: 'linear-gradient(180deg,#2B0E18,#120A0D)',
-  pixel: 'linear-gradient(180deg,#10131B,#111019)',
-  gif: 'linear-gradient(180deg,#1B160F,#2A2012)',
-  travel: 'linear-gradient(180deg,#19130F,#2A1B12)',
-  winter: 'linear-gradient(180deg,#10171D,#17232B)',
-  sepia: 'linear-gradient(180deg,#1D1711,#2A2118)',
-  rain: 'linear-gradient(180deg,#11161B,#1B232A)',
+  default: 'linear-gradient(180deg,#0B0B0D 0%,#221820 52%,#111014 100%)',
+  dawn: 'linear-gradient(180deg,#29152B 0%,#9A4E63 48%,#39203A 100%)',
+  day: 'linear-gradient(180deg,#10232D 0%,#2E6671 50%,#172A31 100%)',
+  evening: 'linear-gradient(180deg,#2A1722 0%,#A64C45 46%,#3A1A29 100%)',
+  romantic: 'linear-gradient(180deg,#2A0E1B 0%,#6A2445 48%,#2B101D 100%)',
+  night: 'linear-gradient(180deg,#080918 0%,#20265B 52%,#090A17 100%)',
+  burgundy: 'linear-gradient(180deg,#260812 0%,#741D38 50%,#250A13 100%)',
+  pixel: 'linear-gradient(180deg,#081429 0%,#173E64 50%,#101326 100%)',
+  gif: 'linear-gradient(180deg,#241707 0%,#704718 50%,#28190A 100%)',
+  travel: 'linear-gradient(180deg,#24160E 0%,#74452C 50%,#241711 100%)',
+  winter: 'linear-gradient(180deg,#0B1A25 0%,#315D73 52%,#10202B 100%)',
+  sepia: 'linear-gradient(180deg,#251B0F 0%,#6B4B2C 50%,#261B10 100%)',
+  rain: 'linear-gradient(180deg,#101820 0%,#354A59 52%,#111A22 100%)',
   // New: soft forest green with tree silhouettes (see Botanical "trees" kind).
-  forest: 'linear-gradient(180deg,#0E1511,#182319)',
+  forest: 'linear-gradient(180deg,#0B1710 0%,#285439 50%,#0D1A12 100%)',
   // New: a scene that visibly darkens as it enters view (see .dusk-veil in
   // globals.css) — for goodbyes, endings of a chapter, or bittersweet notes.
-  dusk: 'linear-gradient(180deg,#17131F,#08070D)',
+  dusk: 'linear-gradient(180deg,#24142F 0%,#713A61 38%,#0A080F 100%)',
 };
 
 // Date/time formatting is style-selectable from Admin → Настройки
@@ -84,7 +87,12 @@ function zoneOf(row: PublicTimelineRow) {
   if (row.mood === 'sad') return 'burgundy';
   if (row.mood === 'romantic') return 'romantic';
   if (row.mood === 'memory') return 'sepia';
-  return 'default';
+  const hour = new Date(row.occurred_at).getUTCHours();
+  if (hour <= 4 || hour >= 22) return 'night';
+  if (hour <= 9) return 'dawn';
+  if (hour <= 16) return 'day';
+  if (hour <= 20) return 'evening';
+  return 'dusk';
 }
 
 // Corner ornament used by the `hearts` frame below — four small hearts, one
@@ -160,6 +168,29 @@ function MotionWrap({ children, className, reduced }: { children: React.ReactNod
   return <motion.div className={className} initial={reduced ? undefined : { opacity: 0, y: 24 }} whileInView={reduced ? undefined : { opacity: 1, y: 0 }} viewport={{ once: true, margin: '-8% 0px' }} transition={{ duration: 0.95, ease: 'easeOut' }}>{children}</motion.div>;
 }
 
+function revealPreset(name: string) {
+  switch (name) {
+    case 'fade': return { initial: { opacity: 0 }, animate: { opacity: 1 } };
+    case 'slide-left': return { initial: { opacity: 0, x: -46 }, animate: { opacity: 1, x: 0 } };
+    case 'slide-right': return { initial: { opacity: 0, x: 46 }, animate: { opacity: 1, x: 0 } };
+    case 'zoom': return { initial: { opacity: 0, scale: .9 }, animate: { opacity: 1, scale: 1 } };
+    case 'blur': return { initial: { opacity: 0, filter: 'blur(14px)' }, animate: { opacity: 1, filter: 'blur(0px)' } };
+    case 'flip': return { initial: { opacity: 0, rotateX: 18, y: 24 }, animate: { opacity: 1, rotateX: 0, y: 0 } };
+    default: return { initial: { opacity: 0, y: 30 }, animate: { opacity: 1, y: 0 } };
+  }
+}
+
+function AnimatedWords({ text, className, reduced }: { text: string; className: string; reduced: boolean | null }) {
+  if (reduced) return <p className={className}>{text}</p>;
+  const parts = text.split(/(\s+)/);
+  let wordIndex = 0;
+  return <p className={className}>{parts.map((part, index) => {
+    if (/^\s+$/.test(part)) return <span key={index}>{part}</span>;
+    const delay = Math.min(1.35, wordIndex++ * .055);
+    return <motion.span key={index} className="inline-block" initial={{ opacity: 0, y: 9, filter: 'blur(4px)' }} whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }} viewport={{ once: true, margin: '-8% 0px' }} transition={{ duration: .42, delay }}>{part}</motion.span>;
+  })}</p>;
+}
+
 export default function StoryElement({ row, token, galleryRows }: { row: PublicTimelineRow; token: string; galleryRows?: PublicTimelineRow[] }) {
   const reducedMotion = useReducedMotion();
   const settings = useReaderSettings();
@@ -230,6 +261,7 @@ export default function StoryElement({ row, token, galleryRows }: { row: PublicT
   const backgroundImage = safeRemoteUrl(row.style?.backgroundImageUrl);
   const backgroundPosition = typeof row.style?.backgroundPosition === 'string' ? row.style.backgroundPosition : 'center';
   const overlayOpacity = typeof row.style?.backgroundOverlay === 'number' ? Math.max(0, Math.min(90, row.style.backgroundOverlay)) / 100 : 0.46;
+  const revealAnimation = typeof row.style?.animation === 'string' ? row.style.animation : 'fade-up';
   // A message becomes a full "letter" (no truncation, generous paragraph
   // spacing) once it's long enough that a single flowing line would feel
   // cramped — matches the "ОЧЕНЬ ДЛИННЫЙ ТЕКСТ" treatment in the prototype.
@@ -254,7 +286,9 @@ export default function StoryElement({ row, token, galleryRows }: { row: PublicT
     </div>
   ) : (
     <div className={`story-copy min-w-0 ${isSpecial ? 'mx-auto max-w-[390px] text-center' : textAlign}`}>
-      <p className={`min-w-0 whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${textColorClass} ${isSpecial ? 'text-[27px] italic' : ''}`}>{text}</p>
+      {revealAnimation === 'words' && text.length <= 360
+        ? <AnimatedWords reduced={reducedMotion} text={text} className={`min-w-0 whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${textColorClass} ${isSpecial ? 'text-[27px] italic' : ''}`} />
+        : <p className={`min-w-0 whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${textColorClass} ${isSpecial ? 'text-[27px] italic' : ''}`}>{text}</p>}
       {row.display_text && row.original_text && row.display_text !== row.original_text && <details className="mt-5 text-[11px] opacity-45"><summary className="cursor-pointer">оригинал</summary><p className="mt-2 whitespace-pre-wrap font-sans">{row.original_text}</p></details>}
       {textReaction && <div className="mt-4 text-sm opacity-50">{textReaction}</div>}
       {isSpecial && <div className="mt-5 text-lg text-gold/70">♡</div>}
@@ -268,7 +302,7 @@ export default function StoryElement({ row, token, galleryRows }: { row: PublicT
     : textNode;
 
   const content = (
-    <article ref={ref} style={{ background: bgByZone[zone] ?? bgByZone.default, ...(backgroundImage ? { backgroundImage: `url(${JSON.stringify(backgroundImage)})`, backgroundSize: 'cover', backgroundPosition, backgroundAttachment: 'scroll' } : {}) }} className={`relative w-full min-w-0 overflow-hidden transition-[background] duration-[1800ms] ${spacing}`}>
+    <article ref={ref} data-story-zone={zone} data-has-background={backgroundImage ? 'true' : 'false'} style={{ background: bgByZone[zone] ?? bgByZone.default, ...(backgroundImage ? { backgroundImage: `url(${JSON.stringify(backgroundImage)})`, backgroundSize: 'cover', backgroundPosition, backgroundAttachment: 'scroll' } : {}) }} className={`story-atmosphere relative w-full min-w-0 overflow-hidden transition-[background] duration-[1800ms] ${spacing}`}>
       {backgroundImage && <div aria-hidden className="absolute inset-0 bg-[#0A0809]" style={{ opacity: overlayOpacity }} />}
       <div aria-hidden className="cinema-vignette absolute inset-0" />
       {zone === 'forest' && <Treeline />}
@@ -290,5 +324,6 @@ export default function StoryElement({ row, token, galleryRows }: { row: PublicT
       </div>
     </article>
   );
-  return <motion.div initial={reducedMotion ? undefined : { opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true, margin: '-5% 0px' }} transition={{ duration: 0.8 }}>{content}</motion.div>;
+  const reveal = revealPreset(revealAnimation);
+  return <motion.div style={{ transformPerspective: 900 }} initial={reducedMotion ? undefined : reveal.initial} whileInView={reducedMotion ? undefined : reveal.animate} viewport={{ once: true, margin: '-7% 0px' }} transition={{ duration: revealAnimation === 'words' ? .72 : .92, ease: [0.22, 1, 0.36, 1] }}>{content}</motion.div>;
 }

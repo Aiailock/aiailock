@@ -3,6 +3,7 @@ import { Heart, LockKeyhole } from 'lucide-react';
 import TimelineStory from '@/components/reader/TimelineStory';
 import { fetchReaderSettings, requestReaderAccess } from '@/lib/readerApi';
 import { ReaderSettingsContext, readDisplaySettingsFromTheme, type ReaderDisplaySettings } from '@/lib/readerSettingsContext';
+import { safeRemoteUrl } from '@/lib/safeUrl';
 
 const TOKEN_KEY = 'for-you-reader-token';
 
@@ -101,6 +102,7 @@ export default function ReaderPage() {
   if (!token) return <div className="flex min-h-screen items-center justify-center bg-cream px-6 text-center text-sm opacity-60">{error ?? 'История пока недоступна.'}</div>;
 
   const empty = token === 'empty';
+  const coverBackground = safeRemoteUrl(displaySettings.coverBackgroundUrl);
   const petals = Array.from({ length: 7 }, (_, index) => ({ left: `${10 + index * 13}%`, delay: `${index * 1.7}s`, duration: `${14 + (index % 3) * 4}s`, size: `${6 + (index % 3) * 2}px` }));
   return (
     <main className="reader-shell relative min-h-screen overflow-hidden bg-cream text-ink">
@@ -108,11 +110,12 @@ export default function ReaderPage() {
         {petals.map((petal, index) => <svg key={index} className="petal absolute top-[-5vh] opacity-40" style={{ left: petal.left, animationDelay: petal.delay, animationDuration: petal.duration, width: petal.size, height: petal.size }} viewBox="0 0 20 20"><path d="M10 1C15 4 18 8 10 18C2 8 5 4 10 1Z" fill="currentColor"/></svg>)}
       </div>
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_20%_10%,rgba(242,201,194,.55),transparent_35%),radial-gradient(circle_at_80%_80%,rgba(200,191,231,.45),transparent_38%)]" />
-      <section className="flex min-h-[94vh] flex-col items-center justify-center px-6 text-center">
-        <Heart size={21} strokeWidth={1.3} className="mb-5 text-burgundy/70" />
-        <h1 className="font-serif text-[46px] font-medium tracking-wide text-burgundy sm:text-6xl">{title}</h1>
-        <p className="mt-5 font-script text-2xl opacity-55">история впереди</p>
-        <div className="mt-16 h-14 w-px bg-gradient-to-b from-transparent via-burgundy/25 to-transparent" />
+      <section className={`relative flex min-h-[94vh] flex-col items-center justify-center overflow-hidden px-6 text-center ${coverBackground ? 'text-white' : ''}`} style={coverBackground ? { backgroundImage: `url(${JSON.stringify(coverBackground)})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
+        {coverBackground && <div className="absolute inset-0 bg-gradient-to-b from-[#2b1621]/50 via-[#2b1621]/45 to-[#2b1621]/75" />}
+        <Heart size={21} strokeWidth={1.3} className={`relative mb-5 ${coverBackground ? 'text-white/75' : 'text-burgundy/70'}`} />
+        <h1 className={`relative overflow-wrap-anywhere font-serif text-[46px] font-medium tracking-wide sm:text-6xl ${coverBackground ? 'text-white drop-shadow-lg' : 'text-burgundy'}`}>{title}</h1>
+        <p className="relative mt-5 font-script text-2xl opacity-65">{displaySettings.coverSubtitle}</p>
+        <div className={`relative mt-16 h-14 w-px bg-gradient-to-b from-transparent to-transparent ${coverBackground ? 'via-white/35' : 'via-burgundy/25'}`} />
       </section>
       {empty ? (
         <section className="mx-auto flex min-h-[45vh] max-w-page items-center justify-center px-6 pb-32 text-center">
@@ -125,7 +128,7 @@ export default function ReaderPage() {
       ) : <ReaderSettingsContext.Provider value={displaySettings}><TimelineStory token={token} track={!isPreview} /></ReaderSettingsContext.Provider>}
       <div className="px-6 pb-20 pt-8 text-center">
         <div className="mx-auto h-px w-16 bg-gold/45" />
-        <p className="mt-4 font-script text-2xl text-burgundy/55">история продолжается</p>
+        <p className="mt-4 font-script text-2xl text-burgundy/55">{displaySettings.closingMessage}</p>
       </div>
     </main>
   );

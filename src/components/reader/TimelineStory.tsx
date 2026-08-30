@@ -17,6 +17,17 @@ export default function TimelineStory({ token, track = true }: { token: string; 
   const visitId = useRef(crypto.randomUUID());
   const lastReported = useRef({ id: '', progress: 0 });
 
+  const renderedRows: Array<{ row: PublicTimelineRow; galleryRows?: PublicTimelineRow[]; position: number }> = [];
+  rows.forEach((row, index) => {
+    const groupId = row.screenshot_collection_id;
+    if (!groupId) { renderedRows.push({ row, position: index + 1 }); return; }
+    const firstIndex = rows.findIndex((candidate) => candidate.screenshot_collection_id === groupId);
+    if (firstIndex !== index) return;
+    const galleryRows = rows.filter((candidate) => candidate.screenshot_collection_id === groupId);
+    const lastPosition = Math.max(...galleryRows.map((candidate) => rows.indexOf(candidate) + 1));
+    renderedRows.push({ row, galleryRows, position: lastPosition });
+  });
+
   const load = useCallback(async (nextCursor: PublicTimelineCursor | null) => {
     if (loadingRef.current || (!nextCursor && rows.length > 0)) return;
     loadingRef.current = true;
@@ -89,7 +100,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
 
   return <div className="w-full">
     <div className="pointer-events-none fixed inset-x-0 top-0 z-40 h-1 bg-black/5"><div className="h-full bg-gradient-to-r from-burgundy via-[#b66b7f] to-gold transition-[width] duration-700" style={{ width: `${readProgress}%` }} /></div>
-    {rows.map((row, index) => <div key={row.element_id} data-reader-element={row.element_id} data-reader-position={index + 1}><StoryElement row={row} token={token} /></div>)}
+    {renderedRows.map(({ row, galleryRows, position }) => <div key={row.screenshot_collection_id ?? row.element_id} data-reader-element={row.element_id} data-reader-position={position}><StoryElement row={row} galleryRows={galleryRows} token={token} /></div>)}
     <div ref={sentinel} className="flex min-h-24 items-center justify-center">{loading && <LoaderCircle className="animate-spin opacity-35" size={20} />}</div>
     {!hasMore && rows.length > 0 && <div className="px-6 pb-32 pt-20 text-center"><div className="mx-auto h-px w-20 bg-gold/50" /><p className="mt-6 font-script text-3xl text-burgundy">продолжение следует</p><p className="mt-2 text-xs uppercase tracking-[2px] opacity-35">новая глава появится здесь</p></div>}
   </div>;

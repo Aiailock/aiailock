@@ -1,10 +1,14 @@
 import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
 import { useRef } from 'react';
 import type { PublicTimelineRow } from '@/lib/readerApi';
-import { useReaderSettings, type TimeFormatId } from '@/lib/readerSettingsContext';
+import { useReaderSettings, type DateStyleId, type TimeFormatId } from '@/lib/readerSettingsContext';
+import { safeRemoteUrl } from '@/lib/safeUrl';
 import ReaderMedia from './ReaderMedia';
 import EffectsLayer from './EffectsLayer';
 import InteractiveMoment from './InteractiveMoment';
+import DateStamp from './DateStamp';
+import ScreenshotGallery from './ScreenshotGallery';
+import ReaderReaction from './ReaderReaction';
 
 // A message renders as a full "letter" layout (bigger serif type, generous
 // paragraph spacing, no visual truncation) once it crosses this length —
@@ -156,13 +160,22 @@ function MotionWrap({ children, className, reduced }: { children: React.ReactNod
   return <motion.div className={className} initial={reduced ? undefined : { opacity: 0, y: 24 }} whileInView={reduced ? undefined : { opacity: 1, y: 0 }} viewport={{ once: true, margin: '-8% 0px' }} transition={{ duration: 0.95, ease: 'easeOut' }}>{children}</motion.div>;
 }
 
-export default function StoryElement({ row, token }: { row: PublicTimelineRow; token: string }) {
+export default function StoryElement({ row, token, galleryRows }: { row: PublicTimelineRow; token: string; galleryRows?: PublicTimelineRow[] }) {
   const reducedMotion = useReducedMotion();
-  const { specialMomentLabel, timeFormat, readerFont } = useReaderSettings();
+  const settings = useReaderSettings();
+  const { specialMomentLabel, timeFormat, readerFont } = settings;
   const zone = zoneOf(row);
   const ref = useRef<HTMLElement | null>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start end', 'end start'] });
   const parallaxY = useTransform(scrollYProgress, [0, 1], reducedMotion ? [0, 0] : [-8, 8]);
+
+  if (row.type === 'chapter') {
+    const chapterTitle = typeof row.metadata?.title === 'string' ? row.metadata.title : 'Новая глава';
+    const chapterSubtitle = typeof row.metadata?.subtitle === 'string' ? row.metadata.subtitle : '';
+    const chapterNumber = typeof row.metadata?.number === 'string' || typeof row.metadata?.number === 'number' ? String(row.metadata.number) : '';
+    const chapterBackground = safeRemoteUrl(row.style?.backgroundImageUrl);
+    return <MotionWrap reduced={reducedMotion}><section id={`chapter-${row.element_id}`} className="relative mx-auto flex min-h-[72vh] max-w-page items-center justify-center overflow-hidden px-6 py-20 text-center" style={chapterBackground ? { backgroundImage: `linear-gradient(rgba(35,17,28,.45),rgba(35,17,28,.68)),url(${JSON.stringify(chapterBackground)})`, backgroundSize: 'cover', backgroundPosition: String(row.style?.backgroundPosition ?? 'center') } : { background: bgByZone[zone] ?? bgByZone.default }}><div className="relative z-10 max-w-[360px]"><div className={`text-[10px] uppercase tracking-[4px] ${chapterBackground || ['night','burgundy','dusk'].includes(zone) ? 'text-white/55' : 'text-burgundy/45'}`}>{chapterNumber ? `глава ${chapterNumber}` : 'новая глава'}</div><div className={`mx-auto my-7 h-px w-16 ${chapterBackground || ['night','burgundy','dusk'].includes(zone) ? 'bg-white/35' : 'bg-gold/60'}`} /><h2 className={`overflow-wrap-anywhere font-serif text-[46px] leading-[1.04] ${chapterBackground || ['night','burgundy','dusk'].includes(zone) ? 'text-white' : 'text-burgundy'}`}>{chapterTitle}</h2>{chapterSubtitle && <p className={`mt-6 font-script text-2xl leading-relaxed ${chapterBackground || ['night','burgundy','dusk'].includes(zone) ? 'text-white/70' : 'text-burgundy/60'}`}>{chapterSubtitle}</p>}<div className={`mx-auto mt-10 text-2xl ${chapterBackground || ['night','burgundy','dusk'].includes(zone) ? 'text-white/45' : 'text-gold/70'}`}>♡</div></div></section></MotionWrap>;
+  }
 
   if (row.type === 'year_break') return <MotionWrap reduced={reducedMotion}><section className="mx-auto flex min-h-[55vh] max-w-page items-center justify-center px-6 text-center"><div><div className="mx-auto mb-6 h-px w-16 bg-gold/60"/><div className="font-serif text-[68px] font-medium leading-none text-burgundy">{year(row.occurred_at)}</div><div className="mx-auto mt-5 h-px w-28 bg-gold/35"/><p className="mt-4 font-script text-2xl opacity-55">ещё одна глава</p></div></section></MotionWrap>;
 
@@ -177,7 +190,7 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
   // looked at `display_text`/`original_text`, which are message-only
   // columns and are null for memory/screenshot rows. That's why manually
   // added "особые моменты" appeared with just the label and no text.
-  const text = row.memory_id
+  const text = row.style?.hideText === true ? null : row.memory_id
     ? row.memory_body ?? null
     : row.screenshot_id
     ? row.screenshot_caption ?? row.screenshot_description ?? null
@@ -185,17 +198,27 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
   const title = row.memory_id ? row.memory_title : row.screenshot_id ? row.screenshot_title : null;
   const frame = typeof row.style?.frame === 'string' ? row.style.frame : 'minimal';
   const label = row.mood ? moodLabel[row.mood] : '';
-  const media = Boolean(row.media_id || row.screenshot_id || row.memory_photo_storage_path);
+  const externalMediaUrl = safeRemoteUrl(row.style?.externalMediaUrl);
+  const media = Boolean(row.media_id || row.screenshot_id || row.memory_photo_storage_path || externalMediaUrl || (galleryRows && galleryRows.length > 0));
   const isSpecial = row.type === 'special' || row.metadata?.kind === 'special';
   const isInteractive = row.type === 'interactive' || row.metadata?.kind === 'interactive';
   const interactionKind = typeof row.metadata?.interaction === 'string' ? row.metadata.interaction : 'spoiler';
   // Per-element override (Admin → Оформление → «Формат даты/времени именно
   // здесь») falls back to the site-wide setting when not set.
   const effectiveTimeFormat = typeof row.style?.timeFormat === 'string' && row.style.timeFormat ? (row.style.timeFormat as TimeFormatId) : timeFormat;
+  const effectiveDateStyle = typeof row.style?.dateStyle === 'string' ? row.style.dateStyle as DateStyleId : settings.dateStyle;
+  const effectiveDateAlign = row.style?.dateAlign === 'center' || row.style?.dateAlign === 'right' ? row.style.dateAlign : settings.dateAlign;
+  const effectiveDateFont = typeof row.style?.dateFont === 'string' && row.style.dateFont ? row.style.dateFont : settings.dateFont;
+  const hideTime = typeof row.style?.hideTime === 'boolean' ? row.style.hideTime : settings.hideTime;
   const decoration = Array.isArray(row.style?.decoration) ? (row.style?.decoration as string[]) : null;
   const gifUrl = typeof row.style?.gifUrl === 'string' ? (row.style.gifUrl as string) : null;
   const selectedFont = typeof row.style?.font === 'string' && row.style.font ? row.style.font : readerFont;
   const fontOverride = fontClassByOption[selectedFont] ?? 'font-serif';
+  const textAlign = row.style?.textAlign === 'center' ? 'text-center' : row.style?.textAlign === 'right' ? 'text-right' : 'text-left';
+  const spacing = row.style?.spacing === 'compact' ? 'py-5' : row.style?.spacing === 'cinematic' ? 'py-16 min-h-[44vh] flex items-center' : 'py-8';
+  const backgroundImage = safeRemoteUrl(row.style?.backgroundImageUrl);
+  const backgroundPosition = typeof row.style?.backgroundPosition === 'string' ? row.style.backgroundPosition : 'center';
+  const overlayOpacity = typeof row.style?.backgroundOverlay === 'number' ? Math.max(0, Math.min(90, row.style.backgroundOverlay)) / 100 : 0.46;
   // A message becomes a full "letter" (no truncation, generous paragraph
   // spacing) once it's long enough that a single flowing line would feel
   // cramped — matches the "ОЧЕНЬ ДЛИННЫЙ ТЕКСТ" treatment in the prototype.
@@ -209,18 +232,18 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
   const darkFrame = ['stars', 'neon', 'pixel', 'moonlit'].includes(frame);
   const textColorClass = shouldFrameText
     ? (darkFrame ? 'text-[#F4EAF0]' : 'text-ink')
-    : (zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-ink');
+    : (safeRemoteUrl(row.style?.backgroundImageUrl) || zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-ink');
 
   const textNode = text && (isLongLetter ? (
-    <div className={`mx-auto max-w-[380px] space-y-5 ${textColorClass}`}>
+    <div className={`story-copy mx-auto min-w-0 max-w-[380px] space-y-5 ${textAlign} ${textColorClass}`}>
       <div className="text-center text-[11px] uppercase tracking-[2px] opacity-45">без ограничения</div>
       {text.split(/\n{2,}|\n/).filter(Boolean).map((para, i) => (
         <p key={i} className={`whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[21px] leading-[1.75]`}>{para}</p>
       ))}
     </div>
   ) : (
-    <div className={isSpecial ? 'mx-auto max-w-[390px] text-center' : ''}>
-      <p className={`whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${textColorClass} ${isSpecial ? 'text-[27px] italic' : ''}`}>{text}</p>
+    <div className={`story-copy min-w-0 ${isSpecial ? 'mx-auto max-w-[390px] text-center' : textAlign}`}>
+      <p className={`min-w-0 whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${textColorClass} ${isSpecial ? 'text-[27px] italic' : ''}`}>{text}</p>
       {row.display_text && row.original_text && row.display_text !== row.original_text && <details className="mt-5 text-[11px] opacity-45"><summary className="cursor-pointer">оригинал</summary><p className="mt-2 whitespace-pre-wrap font-sans">{row.original_text}</p></details>}
       {textReaction && <div className="mt-4 text-sm opacity-50">{textReaction}</div>}
       {isSpecial && <div className="mt-5 text-lg text-gold/70">♡</div>}
@@ -234,23 +257,24 @@ export default function StoryElement({ row, token }: { row: PublicTimelineRow; t
     : textNode;
 
   const content = (
-    <article ref={ref} style={{ background: bgByZone[zone] ?? bgByZone.default }} className="relative overflow-hidden py-8 transition-[background] duration-[1800ms]">
+    <article ref={ref} style={{ background: bgByZone[zone] ?? bgByZone.default, ...(backgroundImage ? { backgroundImage: `url(${JSON.stringify(backgroundImage)})`, backgroundSize: 'cover', backgroundPosition, backgroundAttachment: 'scroll' } : {}) }} className={`relative w-full min-w-0 overflow-hidden transition-[background] duration-[1800ms] ${spacing}`}>
+      {backgroundImage && <div aria-hidden className="absolute inset-0 bg-[#25151d]" style={{ opacity: overlayOpacity }} />}
       {zone === 'forest' && <Treeline />}
       {zone === 'dusk' && <div className="dusk-veil" />}
       {decoration && <EffectsLayer decorations={decoration} seed={row.sort_tiebreak + row.occurred_at.length} gifUrl={gifUrl} />}
       <div className="relative mx-auto w-full max-w-page px-[22px]">
         {isSpecial && <div className="mb-8 text-center"><div className="text-[12px] uppercase tracking-[3px] text-gold">{specialMomentLabel}</div><div className="mx-auto mt-4 h-px w-12 bg-gold/55" /></div>}
-        <div className={`mb-4 flex items-center gap-2 text-[10px] uppercase tracking-[1.8px] ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-white/60' : 'text-burgundy/55'}`}>
-          <time>{wallClockDate(row.occurred_at, effectiveTimeFormat)}</time>{effectiveTimeFormat !== 'relative' && <><span>·</span><time>{wallClockTime(row.occurred_at, effectiveTimeFormat)}</time></>}{label && <><span>·</span><span>{label}</span></>}
-        </div>
+        <DateStamp date={wallClockDate(row.occurred_at, effectiveTimeFormat)} time={!hideTime && effectiveTimeFormat !== 'relative' ? wallClockTime(row.occurred_at, effectiveTimeFormat) : null} label={label} variant={effectiveDateStyle} align={effectiveDateAlign} font={effectiveDateFont} dark={Boolean(backgroundImage) || zone === 'night' || zone === 'burgundy' || zone === 'dusk'} />
         {title && !isInteractive && <h3 className={`mb-4 text-center font-serif text-2xl ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-burgundy'}`}>{title}</h3>}
         {isInteractive && text ? <InteractiveMoment kind={interactionKind} title={title} text={text} row={row} token={token} dark={zone === 'night' || zone === 'burgundy' || zone === 'dusk'} fontClass={fontOverride ?? 'font-serif'} /> : <>
-          {media && <motion.div style={{ y: parallaxY }} className="mb-8">
-            <Frame frame={frame}><ReaderMedia row={row} token={token} /></Frame>
+          {media && <motion.div style={{ y: parallaxY }} className="mb-8 min-w-0 max-w-full">
+            {galleryRows && galleryRows.length > 1 ? <ScreenshotGallery rows={galleryRows} token={token} renderFrame={(children, minimal) => <Frame frame={minimal ? 'minimal' : frame}>{children}</Frame>} /> : <Frame frame={frame}><ReaderMedia row={row} token={token} /></Frame>}
             {photoReaction && <div className="mt-3 text-center font-script text-lg opacity-70">{photoReaction}</div>}
           </motion.div>}
           {framedTextNode}
         </>}
+        {row.screenshot_reaction_emoji && <div className={`mx-auto mt-5 max-w-[330px] rounded-2xl border px-4 py-3 text-center ${backgroundImage || zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'border-white/10 bg-white/5 text-white/75' : 'border-burgundy/10 bg-white/35 text-burgundy/75'}`}><span className="text-xl">{row.screenshot_reaction_emoji}</span>{row.screenshot_reaction_text && <p className="mt-1 overflow-wrap-anywhere font-script text-lg">{row.screenshot_reaction_text}</p>}</div>}
+        {(row.screenshot_id || isSpecial) && <ReaderReaction elementId={row.element_id} token={token} dark={Boolean(backgroundImage) || zone === 'night' || zone === 'burgundy' || zone === 'dusk'} />}
       </div>
     </article>
   );

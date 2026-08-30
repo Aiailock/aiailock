@@ -7,7 +7,10 @@ import {
 } from "react";
 import {
   Activity,
+  ArrowDown,
+  ArrowUp,
   BarChart3,
+  CalendarClock,
   CheckSquare2,
   Eye,
   FileArchive,
@@ -34,7 +37,9 @@ import {
   type TimeFormatId,
 } from "@/lib/readerSettingsContext";
 import AnalyticsPanel from "./AnalyticsPanel";
-import { FONT_OPTIONS } from "@/lib/styleOptions";
+import { ALIGN_OPTIONS, DATE_STYLE_OPTIONS, FONT_OPTIONS } from "@/lib/styleOptions";
+import QuickCreatePanel from "./QuickCreatePanel";
+import { safeRemoteUrl } from "@/lib/safeUrl";
 
 interface ImportRow {
   id: string;
@@ -63,6 +68,7 @@ interface TimelineRow {
   mood: string | null;
   importance: number;
   is_published: boolean;
+  metadata: Record<string, unknown>;
 }
 interface MessageRow {
   id: string;
@@ -93,6 +99,11 @@ interface ScreenshotRow {
   animation: string;
   position: string;
   style: Record<string, unknown>;
+  collection_id: string | null;
+  collection_order: number;
+  collection_layout: string;
+  reaction_emoji: string | null;
+  reaction_text: string | null;
 }
 interface MediaRow {
   id: string;
@@ -107,6 +118,7 @@ interface MediaRow {
 
 type Tab =
   | "dashboard"
+  | "create"
   | "analytics"
   | "import"
   | "timeline"
@@ -119,6 +131,7 @@ type Tab =
   | "preview";
 const tabs: Array<[Tab, string]> = [
   ["dashboard", "Обзор"],
+  ["create", "Добавить"],
   ["analytics", "Чтение"],
   ["timeline", "История"],
   ["memories", "Воспоминания"],
@@ -131,7 +144,7 @@ const tabs: Array<[Tab, string]> = [
   ["preview", "Preview"],
 ];
 const tabIcons: Record<Tab, typeof BarChart3> = {
-  dashboard: BarChart3, analytics: Activity, timeline: CheckSquare2, memories: Star,
+  dashboard: BarChart3, create: Plus, analytics: Activity, timeline: CheckSquare2, memories: Star,
   special: Sparkles, screenshots: ImagePlus, media: Images, import: FileArchive,
   ai: Sparkles, settings: Settings2, preview: Eye,
 };
@@ -198,11 +211,12 @@ export default function AdminDashboard() {
         </header>
         <div className="mx-auto hidden max-w-[1500px] items-center justify-between px-7 pb-0 pt-6 md:flex"><div><div className="text-[10px] uppercase tracking-[2px] text-burgundy/40">раздел</div><div className="mt-1 font-serif text-2xl text-burgundy">{tabs.find(([id]) => id === tab)?.[1]}</div></div><button onClick={() => setTab("preview")} className="rounded-xl border border-black/10 bg-white/60 px-4 py-2 text-xs"><Eye size={14} className="mr-1 inline" />Посмотреть reader</button></div>
         {notice && <div className="mx-auto mt-4 max-w-[1500px] px-4 md:px-7"><div className="rounded-xl border border-black/10 bg-white/75 p-3 text-sm shadow-sm">{notice}</div></div>}
-        <main className="mx-auto max-w-[1500px] px-4 py-5 md:px-7 md:py-6">
+        <main className="mx-auto max-w-[1500px] px-4 pb-24 pt-5 md:px-7 md:py-6">
         {tab === "dashboard" && (
           <DashboardPanel onTab={setTab} refreshKey={refreshKey} />
         )}
         {tab === "analytics" && <AnalyticsPanel />}
+        {tab === "create" && <QuickCreatePanel onCreated={() => setRefreshKey((x) => x + 1)} onOpenTimeline={() => setTab("timeline")} />}
         {tab === "import" && (
           <ImportPanel onDone={() => setRefreshKey((x) => x + 1)} />
         )}
@@ -215,6 +229,7 @@ export default function AdminDashboard() {
         {tab === "settings" && <SettingsPanel />}
         {tab === "preview" && <PreviewPanel />}
         </main>
+        {tab !== "create" && <button type="button" onClick={() => setTab("create")} className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-burgundy px-5 py-3 text-sm text-white shadow-2xl md:hidden"><Plus size={17} />Добавить</button>}
       </div>
     </div>
   );
@@ -331,8 +346,14 @@ function DashboardPanel({
         </p>
         <div className="mt-6 flex flex-wrap gap-2">
           <button
-            onClick={() => onTab("import")}
+            onClick={() => onTab("create")}
             className="rounded-xl bg-white px-4 py-2 text-sm text-burgundy shadow"
+          >
+            <Plus size={14} className="mr-1 inline" />Новая страница
+          </button>
+          <button
+            onClick={() => onTab("import")}
+            className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-white"
           >
             Импортировать ZIP
           </button>
@@ -767,6 +788,8 @@ function MessageAnchorPicker({
 
 type InsertKind =
   | "message"
+  | "chapter"
+  | "gif"
   | "special"
   | "memory"
   | "screenshot"
@@ -778,6 +801,8 @@ type InsertKind =
   | "promise";
 const insertKindLabel: Record<InsertKind, string> = {
   message: "Сообщение",
+  chapter: "Глава",
+  gif: "GIF",
   special: "Особый момент",
   memory: "Воспоминание",
   screenshot: "Скриншот",
@@ -859,7 +884,7 @@ function InsertGap({
       </div>
     );
   const hasTitle = insertKind !== "screenshot" && insertKind !== "message";
-  const hasPhoto = insertKind !== "screenshot" && insertKind !== "message";
+  const hasPhoto = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "chapter";
   return (
     <div className="my-2 rounded-2xl border border-dashed border-burgundy/25 bg-[#FBF3EE] p-3">
       {!insertKind ? (
@@ -876,7 +901,7 @@ function InsertGap({
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
             {(
-              ["message", "special", "memory", "screenshot"] as InsertKind[]
+              ["message", "chapter", "gif", "special", "memory", "screenshot"] as InsertKind[]
             ).map((k) => (
               <button
                 key={k}
@@ -949,6 +974,8 @@ function InsertGap({
             placeholder={
               insertKind === "screenshot"
                 ? "Подпись (необязательно)"
+                : insertKind === "chapter"
+                  ? "Короткая фраза под названием главы"
                 : insertKind === "message"
                   ? "Текст сообщения"
                   : interactionKinds.has(insertKind)
@@ -1026,6 +1053,10 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   const [bulkStyle, setBulkStyle] = useState<StyleValue>({});
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [dateEditing, setDateEditing] = useState<string | null>(null);
+  const [dateValue, setDateValue] = useState("");
+  const [chapterEditing, setChapterEditing] = useState<string | null>(null);
+  const [chapterForm, setChapterForm] = useState({ title: "", subtitle: "", number: "" });
 
   // Сортировка по возрастанию (старое → новое), как в самой читалке — так
   // порядок карточек в админке совпадает с тем, что увидит читатель, и
@@ -1035,7 +1066,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
       supabase
         .from("timeline_elements")
         .select(
-          "id,type,occurred_at,message_id,media_id,memory_id,screenshot_id,style,mood,importance,is_published",
+          "id,type,occurred_at,message_id,media_id,memory_id,screenshot_id,style,mood,importance,is_published,metadata",
         )
         .order("occurred_at", { ascending: true })
         .range(page * pageSize, page * pageSize + pageSize - 1),
@@ -1177,6 +1208,12 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
       await load();
     }
   }
+  async function saveChapter(row: TimelineRow) {
+    const metadata = { ...(row.metadata ?? {}), title: chapterForm.title.trim() || "Новая глава", subtitle: chapterForm.subtitle.trim() || null, number: chapterForm.number.trim() || null };
+    const { error } = await supabase.from("timeline_elements").update({ metadata }).eq("id", row.id);
+    if (error) window.alert(error.message);
+    else { setChapterEditing(null); await load(); }
+  }
   async function toggle(row: TimelineRow) {
     const { error } = await supabase
       .from("timeline_elements")
@@ -1308,6 +1345,30 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     void moveElement(dragged, prev, next);
   }
 
+  function moveOne(row: TimelineRow, direction: -1 | 1) {
+    const index = visible.findIndex((item) => item.id === row.id);
+    if (index < 0) return;
+    if (direction === -1) {
+      if (index === 0) return;
+      void moveElement(row, visible[index - 2] ?? null, visible[index - 1]);
+    } else {
+      if (index >= visible.length - 1) return;
+      void moveElement(row, visible[index + 1], visible[index + 2] ?? null);
+    }
+  }
+
+  async function saveDate(row: TimelineRow) {
+    if (!dateValue) return;
+    const at = `${dateValue}Z`;
+    const result = row.memory_id
+      ? await supabase.from("memories").update({ occurred_at: at, place_after_message_id: null }).eq("id", row.memory_id)
+      : row.screenshot_id
+        ? await supabase.from("screenshots").update({ occurred_at: at, place_after_message_id: null, position: "custom" }).eq("id", row.screenshot_id)
+        : await supabase.from("timeline_elements").update({ occurred_at: at }).eq("id", row.id);
+    if (result.error) window.alert(result.error.message);
+    else { setDateEditing(null); await load(); }
+  }
+
   function openInsert(prevId: string | null, nextId: string | null) {
     setInsertGap({ prevId, nextId });
     setInsertKind(null);
@@ -1349,6 +1410,19 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
             has_media: false,
           });
         if (error) throw error;
+      } else if (insertKind === "chapter") {
+        if (!insertTitle.trim()) throw new Error("Напиши название главы.");
+        const { count } = await supabase.from("timeline_elements").select("*", { count: "exact", head: true }).eq("type", "chapter");
+        const { error } = await supabase.from("timeline_elements").insert({
+          id,
+          type: "chapter",
+          occurred_at: at,
+          sort_tiebreak: -20,
+          style: { zone: "romantic", spacing: "cinematic", dateStyle: "centered" },
+          is_published: true,
+          metadata: { title: insertTitle.trim(), subtitle: insertBody.trim() || null, number: Number(count ?? 0) + 1 },
+        });
+        if (error) throw error;
       } else if (insertKind === "screenshot") {
         if (!insertFile) throw new Error("Выбери изображение.");
         const safe = insertFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -1374,8 +1448,9 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
           });
         if (error) throw error;
       } else {
-        if (!insertBody.trim())
+        if (insertKind !== "gif" && !insertBody.trim())
           throw new Error("Напиши текст момента/воспоминания.");
+        if (insertKind === "gif" && !insertFile) throw new Error("Выбери GIF-файл.");
         let photoPath: string | null = null;
         if (insertFile) {
           const safe = insertFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -1391,10 +1466,14 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
         const metadata =
           insertKind === "special"
             ? { kind: "special" }
+            : insertKind === "gif"
+              ? { kind: "gif" }
             : interactive
               ? { kind: "interactive", interaction: insertKind }
               : {};
-        const style = interactive
+        const style = insertKind === "gif"
+          ? { zone: "gif", frame: "minimal", spacing: "cinematic", hideText: !insertBody.trim() }
+          : interactive
           ? {
               zone: insertKind === "letter" ? "sepia" : "romantic",
               font: insertKind === "letter" ? "badscript" : "serif",
@@ -1405,7 +1484,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
           .insert({
             id,
             title: insertTitle.trim() || null,
-            body: insertBody.trim(),
+            body: insertBody.trim() || "GIF",
             occurred_at: at,
             importance: 3,
             photo_storage_path: photoPath,
@@ -1782,7 +1861,10 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                       </div>
                     );
                   })()}
+                {row.type === "chapter" && <div className="mt-3 rounded-xl bg-white p-3"><div className="text-[10px] uppercase tracking-[1.6px] text-gold">глава {String(row.metadata?.number ?? "")}</div>{chapterEditing === row.id ? <div className="mt-2 space-y-2"><input value={chapterForm.title} onChange={(event) => setChapterForm({ ...chapterForm, title: event.target.value })} placeholder="Название главы" className="w-full rounded-xl border p-3 text-sm" /><textarea value={chapterForm.subtitle} onChange={(event) => setChapterForm({ ...chapterForm, subtitle: event.target.value })} placeholder="Подзаголовок" className="min-h-20 w-full rounded-xl border p-3 text-sm" /><input value={chapterForm.number} onChange={(event) => setChapterForm({ ...chapterForm, number: event.target.value })} placeholder="Номер" inputMode="numeric" className="w-full rounded-xl border p-3 text-sm" /><button type="button" onClick={() => void saveChapter(row)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить главу</button></div> : <><div className="mt-1 font-serif text-2xl text-burgundy">{String(row.metadata?.title ?? "Новая глава")}</div>{row.metadata?.subtitle && <p className="mt-1 text-sm opacity-55">{String(row.metadata.subtitle)}</p>}</>}</div>}
                 <div className="mt-4 flex flex-wrap gap-2">
+                  <button type="button" aria-label="Переместить выше" title="Выше" disabled={!reorderable || i === 0 || busyId === row.id} onClick={() => moveOne(row, -1)} className="rounded-lg border px-2.5 py-2 text-xs disabled:opacity-25"><ArrowUp size={14} /></button>
+                  <button type="button" aria-label="Переместить ниже" title="Ниже" disabled={!reorderable || i === visible.length - 1 || busyId === row.id} onClick={() => moveOne(row, 1)} className="rounded-lg border px-2.5 py-2 text-xs disabled:opacity-25"><ArrowDown size={14} /></button>
                   <button
                     onClick={() => {
                       if (m) {
@@ -1803,12 +1885,21 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                           description: shot?.description ?? "",
                           caption: shot?.caption ?? "",
                         });
+                      } else if (row.type === "chapter") {
+                        setChapterEditing(row.id);
+                        setChapterForm({ title: String(row.metadata?.title ?? ""), subtitle: String(row.metadata?.subtitle ?? ""), number: String(row.metadata?.number ?? "") });
                       }
                     }}
-                    disabled={!m && !row.memory_id && !row.screenshot_id}
+                    disabled={!m && !row.memory_id && !row.screenshot_id && row.type !== "chapter"}
                     className="rounded-lg border px-3 py-2 text-xs disabled:opacity-30"
                   >
                     Текст
+                  </button>
+                  <button
+                    onClick={() => { setDateEditing(dateEditing === row.id ? null : row.id); setDateValue(row.occurred_at.slice(0, 16)); }}
+                    className="rounded-lg border px-3 py-2 text-xs"
+                  >
+                    <CalendarClock size={13} className="mr-1 inline" />Дата
                   </button>
                   <button
                     onClick={() => {
@@ -1834,6 +1925,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                     Удалить
                   </button>
                 </div>
+                {dateEditing === row.id && <div className="mt-3 flex flex-wrap gap-2 rounded-xl border border-black/5 bg-white p-3"><input type="datetime-local" value={dateValue} onChange={(event) => setDateValue(event.target.value)} className="min-w-0 flex-1 rounded-lg border p-2 text-sm" /><button type="button" onClick={() => void saveDate(row)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить дату</button></div>}
                 {editing === row.id && (
                   <div className="mt-3">
                     <StyleEditor
@@ -2165,7 +2257,7 @@ function MemoriesPanel({ specialOnly }: { specialOnly: boolean }) {
 
 function ScreenshotsPanel() {
   const [rows, setRows] = useState<ScreenshotRow[]>([]);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: "",
@@ -2176,13 +2268,16 @@ function ScreenshotsPanel() {
     animation: "fade",
     anchorMessageId: "",
     style: { frame: "phone" } as StyleValue,
+    collectionLayout: "carousel",
+    reactionEmoji: "❤",
+    reactionText: "",
   });
   const [message, setMessage] = useState("");
   const load = async () => {
     const { data } = await supabase
       .from("screenshots")
       .select(
-        "id,storage_path,title,description,caption,occurred_at,place_after_message_id,animation,position,style",
+        "id,storage_path,title,description,caption,occurred_at,place_after_message_id,animation,position,style,collection_id,collection_order,collection_layout,reaction_emoji,reaction_text",
       )
       .order("occurred_at", { ascending: false });
     setRows((data ?? []) as ScreenshotRow[]);
@@ -2192,7 +2287,7 @@ function ScreenshotsPanel() {
   }, []);
   function reset() {
     setEditing(null);
-    setFile(null);
+    setFiles([]);
     setForm({
       title: "",
       description: "",
@@ -2202,6 +2297,9 @@ function ScreenshotsPanel() {
       animation: "fade",
       anchorMessageId: "",
       style: { frame: "phone" },
+      collectionLayout: "carousel",
+      reactionEmoji: "❤",
+      reactionText: "",
     });
   }
   async function save(e: FormEvent) {
@@ -2210,6 +2308,7 @@ function ScreenshotsPanel() {
       if (!form.occurredAt) throw new Error("Укажи дату.");
       const id = editing ?? crypto.randomUUID();
       let storagePath = rows.find((r) => r.id === id)?.storage_path ?? "";
+      const file = files[0] ?? null;
       if (file) {
         const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
         storagePath = `manual/screenshots/${id}/${safe}`;
@@ -2221,7 +2320,9 @@ function ScreenshotsPanel() {
           });
         if (error) throw error;
       }
-      if (!storagePath) throw new Error("Выбери изображение.");
+      if (!editing && files.length === 0) throw new Error("Выбери изображение.");
+      if (files.length > 12) throw new Error("Максимум 12 скриншотов в одном альбоме.");
+      if (editing && !storagePath) throw new Error("Выбери изображение.");
       const baseTime = new Date(`${form.occurredAt}Z`).getTime();
       const placementTime =
         form.anchorMessageId &&
@@ -2229,6 +2330,7 @@ function ScreenshotsPanel() {
           form.position === "before_message")
           ? baseTime + (form.position === "before_message" ? -1 : 1)
           : baseTime;
+      const collectionId = !editing && files.length > 1 ? crypto.randomUUID() : rows.find((r) => r.id === id)?.collection_id ?? null;
       const payload = {
         storage_path: storagePath,
         title: form.title.trim() || null,
@@ -2239,11 +2341,51 @@ function ScreenshotsPanel() {
         position: form.position,
         animation: form.animation,
         style: form.style,
+        collection_id: collectionId,
+        collection_order: rows.find((r) => r.id === id)?.collection_order ?? 0,
+        collection_layout: form.collectionLayout,
+        reaction_emoji: form.reactionEmoji || null,
+        reaction_text: form.reactionText.trim() || null,
       };
-      const result = editing
-        ? await supabase.from("screenshots").update(payload).eq("id", id)
-        : await supabase.from("screenshots").insert({ id, ...payload });
-      if (result.error) throw result.error;
+      if (editing) {
+        const result = await supabase.from("screenshots").update(payload).eq("id", id);
+        if (result.error) throw result.error;
+        if (payload.collection_id) {
+          const { error: groupError } = await supabase.from("screenshots").update({
+            occurred_at: payload.occurred_at,
+            place_after_message_id: payload.place_after_message_id,
+            position: payload.position,
+            animation: payload.animation,
+            style: payload.style,
+            collection_layout: payload.collection_layout,
+          }).eq("collection_id", payload.collection_id).neq("id", id);
+          if (groupError) throw groupError;
+        }
+      } else {
+        for (let index = 0; index < files.length; index += 1) {
+          const shotId = index === 0 ? id : crypto.randomUUID();
+          let path = storagePath;
+          if (index > 0) {
+            const current = files[index];
+            const safe = current.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+            path = `manual/screenshots/${shotId}/${safe}`;
+            const { error: uploadError } = await supabase.storage.from("screenshots").upload(path, current, { contentType: current.type || "image/jpeg" });
+            if (uploadError) throw uploadError;
+          }
+          const result = await supabase.from("screenshots").insert({
+            ...payload,
+            id: shotId,
+            storage_path: path,
+            title: index === 0 ? payload.title : null,
+            description: index === 0 ? payload.description : null,
+            caption: index === 0 ? payload.caption : null,
+            collection_order: index,
+            reaction_emoji: index === 0 ? payload.reaction_emoji : null,
+            reaction_text: index === 0 ? payload.reaction_text : null,
+          });
+          if (result.error) throw result.error;
+        }
+      }
       reset();
       setMessage("Сохранено.");
       await load();
@@ -2252,15 +2394,14 @@ function ScreenshotsPanel() {
     }
   }
   async function remove(row: ScreenshotRow) {
-    if (!window.confirm(`Удалить «${row.title ?? row.caption ?? "скриншот"}»?`))
+    const groupRows = row.collection_id ? rows.filter((item) => item.collection_id === row.collection_id) : [row];
+    if (!window.confirm(`Удалить ${groupRows.length > 1 ? `весь альбом (${groupRows.length} файлов)` : `«${row.title ?? row.caption ?? "скриншот"}»`}?`))
       return;
-    const { error } = await supabase
-      .from("screenshots")
-      .delete()
-      .eq("id", row.id);
+    const ids = groupRows.map((item) => item.id);
+    const { error } = await supabase.from("screenshots").delete().in("id", ids);
     if (error) window.alert(error.message);
     else {
-      await supabase.storage.from("screenshots").remove([row.storage_path]);
+      await supabase.storage.from("screenshots").remove(groupRows.map((item) => item.storage_path));
       await load();
     }
   }
@@ -2277,13 +2418,15 @@ function ScreenshotsPanel() {
         <input
           type="file"
           accept="image/*,.gif"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          multiple={!editing}
+          onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
           className="mt-5 block w-full rounded-xl border border-dashed p-3 text-sm"
         />
         <p className="mt-1 text-[11px] opacity-45">
-          Принимает и обычные фото, и .gif — гифка будет анимированной в
-          читалке.
+          Можно выбрать до 12 файлов сразу — они станут одним красивым альбомом.
+          Принимает фото и .gif.
         </p>
+        {files.length > 0 && <div className="mt-2 rounded-xl bg-burgundy/5 p-2 text-xs text-burgundy">Выбрано файлов: {files.length}</div>}
         <input
           value={form.title}
           onChange={(e) => setForm({ ...form, title: e.target.value })}
@@ -2319,6 +2462,10 @@ function ScreenshotsPanel() {
           <option value="before_message">Перед сообщением</option>
           <option value="custom">Свободная позиция</option>
         </select>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">Вид альбома<select value={form.collectionLayout} onChange={(e) => setForm({ ...form, collectionLayout: e.target.value })} className="mt-2 w-full rounded-xl border p-3 text-sm"><option value="carousel">Карусель</option><option value="stack">Стопка снимков</option><option value="collage">Коллаж</option></select></label>
+          <label className="text-sm">Реакция на скриншоты<div className="mt-2 flex gap-2"><select value={form.reactionEmoji} onChange={(e) => setForm({ ...form, reactionEmoji: e.target.value })} className="w-20 rounded-xl border p-3"><option>❤</option><option>🥹</option><option>😂</option><option>✨</option><option>💔</option></select><input value={form.reactionText} onChange={(e) => setForm({ ...form, reactionText: e.target.value })} placeholder="Твоя подпись" className="min-w-0 flex-1 rounded-xl border p-3" /></div></label>
+        </div>
         <div className="mt-3">
           <MessageAnchorPicker
             value={form.anchorMessageId}
@@ -2362,13 +2509,14 @@ function ScreenshotsPanel() {
         {message && <p className="mt-3 text-sm opacity-60">{message}</p>}
       </form>
       <div className="space-y-3">
-        {rows.map((row) => (
+        {rows.filter((row) => !row.collection_id || row.collection_order === 0).map((row) => (
           <article
             key={row.id}
             className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm"
           >
             <div className="text-xs opacity-45">
               {dateTime(row.occurred_at)} · {row.position} · {row.animation}
+              {row.collection_id && <> · альбом {rows.filter((item) => item.collection_id === row.collection_id).length} кадров</>}
             </div>
             <h2 className="mt-1 font-serif text-xl text-burgundy">
               {row.title ?? row.caption ?? "Без заголовка"}
@@ -2389,6 +2537,9 @@ function ScreenshotsPanel() {
                     animation: row.animation,
                     anchorMessageId: row.place_after_message_id ?? "",
                     style: (row.style ?? {}) as StyleValue,
+                    collectionLayout: row.collection_layout ?? "carousel",
+                    reactionEmoji: row.reaction_emoji ?? "❤",
+                    reactionText: row.reaction_text ?? "",
                   });
                 }}
                 className="rounded-lg border px-3 py-2 text-xs"
@@ -2502,6 +2653,13 @@ function SettingsPanel() {
   const [timeFormat, setTimeFormat] =
     useState<TimeFormatId>(DEFAULT_TIME_FORMAT);
   const [readerFont, setReaderFont] = useState("serif");
+  const [dateStyle, setDateStyle] = useState("line");
+  const [dateAlign, setDateAlign] = useState("left");
+  const [dateFont, setDateFont] = useState("sans");
+  const [hideTime, setHideTime] = useState(false);
+  const [coverSubtitle, setCoverSubtitle] = useState("история впереди");
+  const [closingMessage, setClosingMessage] = useState("история продолжается");
+  const [coverBackgroundUrl, setCoverBackgroundUrl] = useState("");
   useEffect(() => {
     supabase
       .from("history_settings")
@@ -2534,6 +2692,13 @@ function SettingsPanel() {
           )
             setTimeFormat(theme.timeFormat as TimeFormatId);
           if (typeof theme.readerFont === "string") setReaderFont(theme.readerFont);
+          if (typeof theme.dateStyle === "string") setDateStyle(theme.dateStyle);
+          if (typeof theme.dateAlign === "string") setDateAlign(theme.dateAlign);
+          if (typeof theme.dateFont === "string") setDateFont(theme.dateFont);
+          setHideTime(theme.hideTime === true);
+          if (typeof theme.coverSubtitle === "string") setCoverSubtitle(theme.coverSubtitle);
+          if (typeof theme.closingMessage === "string") setClosingMessage(theme.closingMessage);
+          if (typeof theme.coverBackgroundUrl === "string") setCoverBackgroundUrl(theme.coverBackgroundUrl);
         }
       });
   }, []);
@@ -2541,6 +2706,8 @@ function SettingsPanel() {
     try {
       if (passwordEnabled && !initialPasswordEnabled && !password)
         throw new Error("Укажи пароль перед включением защиты.");
+      if (coverBackgroundUrl.trim() && !safeRemoteUrl(coverBackgroundUrl))
+        throw new Error("Фон обложки должен быть полной ссылкой https://…");
       let parsed: Record<string, unknown> = JSON.parse(advanced || "{}");
       parsed = {
         ...parsed,
@@ -2549,6 +2716,13 @@ function SettingsPanel() {
           specialMomentLabel.trim() || DEFAULT_SPECIAL_MOMENT_LABEL,
         timeFormat,
         readerFont,
+        dateStyle,
+        dateAlign,
+        dateFont,
+        hideTime,
+        coverSubtitle: coverSubtitle.trim() || "история впереди",
+        closingMessage: closingMessage.trim() || "история продолжается",
+        coverBackgroundUrl: coverBackgroundUrl.trim(),
       };
       const { error } = await supabase.rpc("update_history_settings", {
         p_reader_title: title,
@@ -2633,6 +2807,23 @@ function SettingsPanel() {
         </select>
         <span className="mt-1 block text-xs opacity-45">Отдельные элементы по-прежнему можно переопределить в «Оформлении».</span>
       </label>
+      <div className="mt-5 rounded-2xl border border-black/5 bg-[#FBF8F5] p-4">
+        <div className="text-sm font-medium text-burgundy">Дата во всей истории</div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-xs">Дизайн<select value={dateStyle} onChange={(event) => setDateStyle(event.target.value)} className="mt-2 w-full rounded-xl border p-3 text-sm">{DATE_STYLE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+          <label className="text-xs">Расположение<select value={dateAlign} onChange={(event) => setDateAlign(event.target.value)} className="mt-2 w-full rounded-xl border p-3 text-sm">{ALIGN_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+          <label className="text-xs">Шрифт<select value={dateFont} onChange={(event) => setDateFont(event.target.value)} className="mt-2 w-full rounded-xl border p-3 text-sm">{FONT_OPTIONS.filter((option) => ['sans','serif','script','literata','badscript','marck','neucha','comfort'].includes(option.id)).map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+          <label className="flex items-center gap-2 self-end rounded-xl border p-3 text-sm"><input type="checkbox" checked={hideTime} onChange={(event) => setHideTime(event.target.checked)} />Скрыть время везде</label>
+        </div>
+        <p className="mt-2 text-[11px] opacity-45">Для отдельной страницы эти параметры можно переопределить в её «Оформлении».</p>
+      </div>
+      <div className="mt-5 rounded-2xl border border-black/5 bg-[#FBF8F5] p-4">
+        <div className="text-sm font-medium text-burgundy">Обложка и финальная фраза</div>
+        <input value={coverSubtitle} onChange={(event) => setCoverSubtitle(event.target.value)} placeholder="история впереди" className="mt-3 w-full rounded-xl border p-3" />
+        <input value={closingMessage} onChange={(event) => setClosingMessage(event.target.value)} placeholder="история продолжается" className="mt-3 w-full rounded-xl border p-3" />
+        <input value={coverBackgroundUrl} onChange={(event) => setCoverBackgroundUrl(event.target.value)} inputMode="url" placeholder="Ссылка на картинку для обложки: https://…" className="mt-3 w-full rounded-xl border p-3" />
+        {coverBackgroundUrl && !safeRemoteUrl(coverBackgroundUrl) && <p className="mt-1 text-xs text-red-700">Нужна полная ссылка http:// или https://</p>}
+      </div>
       <div className="mt-5">
         <div className="text-sm">Палитра reader</div>
         <div className="mt-3 flex flex-wrap gap-2">{themePresets.map((preset) => <button key={preset.name} type="button" onClick={() => setColors(preset.colors)} className="rounded-full border border-black/10 bg-white px-3 py-2 text-xs hover:border-burgundy/30">{preset.name}</button>)}</div>

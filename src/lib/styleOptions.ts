@@ -85,6 +85,27 @@ export const INTERACTION_OPTIONS: StyleOption[] = [
   { id: 'promise', label: 'Обещание', hint: 'Небольшой сердечный ритуал' },
 ];
 
+export const DATE_STYLE_OPTIONS: StyleOption[] = [
+  { id: 'line', label: 'Тонкая строка', hint: 'Лаконично слева' },
+  { id: 'centered', label: 'По центру', hint: 'Дата между двумя линиями' },
+  { id: 'ribbon', label: 'Лента', hint: 'Мягкая цветная плашка' },
+  { id: 'handwritten', label: 'Запись в дневнике', hint: 'Рукописная дата' },
+  { id: 'capsule', label: 'Капсула', hint: 'Компактная овальная метка' },
+  { id: 'split', label: 'Дата и время по краям', hint: 'Дата слева, время справа' },
+];
+
+export const ALIGN_OPTIONS: StyleOption[] = [
+  { id: 'left', label: 'Слева' },
+  { id: 'center', label: 'По центру' },
+  { id: 'right', label: 'Справа' },
+];
+
+export const SPACING_OPTIONS: StyleOption[] = [
+  { id: 'compact', label: 'Компактно' },
+  { id: 'normal', label: 'Обычно' },
+  { id: 'cinematic', label: 'Кинематографично', hint: 'Больше воздуха и пауза при прокрутке' },
+];
+
 export function findLabel(options: StyleOption[], id: string | undefined | null) {
   return options.find((o) => o.id === id)?.label ?? id ?? '—';
 }

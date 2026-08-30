@@ -47,6 +47,11 @@ export interface PublicTimelineRow {
   screenshot_description: string | null;
   screenshot_animation: string | null;
   screenshot_position: string | null;
+  screenshot_collection_id: string | null;
+  screenshot_collection_order: number | null;
+  screenshot_collection_layout: string | null;
+  screenshot_reaction_emoji: string | null;
+  screenshot_reaction_text: string | null;
   memory_importance: number | null;
   memory_photo_storage_path: string | null;
   memory_metadata: Record<string, unknown> | null;
@@ -115,6 +120,19 @@ export async function recordReaderAnalytics(input: {
   // Analytics must never interrupt the story. It is intentionally best-effort.
   if (error && import.meta.env.DEV) console.warn('Reader analytics:', error.message);
   return { total: typeof data?.total === 'number' ? data.total : null };
+}
+
+export async function recordReaderReaction(input: {
+  visitorId: string;
+  elementId: string;
+  emoji: string;
+}, token: string): Promise<{ emoji: string; count: number }> {
+  const { data, error } = await supabase.functions.invoke('reader-reaction', {
+    body: input,
+    headers: { 'x-reader-access-token': token },
+  });
+  if (error || data?.error) throw new Error(error?.message ?? data?.error ?? 'Не удалось сохранить реакцию.');
+  return { emoji: String(data.emoji), count: Number(data.count ?? 1) };
 }
 
 export async function fetchMediaUrl(input: { mediaId?: string; screenshotId?: string; memoryId?: string }, token: string): Promise<{ url: string; thumbnailUrl: string | null }> {

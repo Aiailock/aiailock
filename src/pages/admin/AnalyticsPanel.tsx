@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, BookOpenCheck, CheckCircle2, Clock3, RefreshCw, Smartphone } from 'lucide-react';
+import { Activity, BookOpenCheck, CheckCircle2, Clock3, Heart, RefreshCw, Smartphone } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 
 interface VisitorRow {
@@ -26,6 +26,13 @@ interface VisitRow {
   completed_at: string | null;
 }
 
+interface ReactionRow {
+  id: string;
+  emoji: string;
+  updated_at: string;
+  element_id: string;
+}
+
 function when(value: string | null) {
   if (!value) return '—';
   return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
@@ -38,17 +45,20 @@ function Stat({ icon: Icon, label, value, hint }: { icon: typeof Activity; label
 export default function AnalyticsPanel() {
   const [visitors, setVisitors] = useState<VisitorRow[]>([]);
   const [visits, setVisits] = useState<VisitRow[]>([]);
+  const [reactions, setReactions] = useState<ReactionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
-    const [visitorResult, visitResult] = await Promise.all([
+    const [visitorResult, visitResult, reactionResult] = await Promise.all([
       supabase.from('reader_visitors').select('visitor_id,first_seen_at,last_seen_at,visit_count,last_element_at,last_element_type,max_position,max_progress,completed_at,viewport_width').order('last_seen_at', { ascending: false }),
       supabase.from('reader_visits').select('id,opened_at,last_seen_at,last_element_at,last_element_type,max_position,max_progress,completed_at').order('opened_at', { ascending: false }).limit(50),
+      supabase.from('reader_reactions').select('id,emoji,updated_at,element_id').order('updated_at', { ascending: false }).limit(100),
     ]);
     const issue = visitorResult.error ?? visitResult.error;
     if (issue) setError(issue.message); else { setVisitors((visitorResult.data ?? []) as VisitorRow[]); setVisits((visitResult.data ?? []) as VisitRow[]); }
+    if (!reactionResult.error) setReactions((reactionResult.data ?? []) as ReactionRow[]);
     setLoading(false);
   }, []);
 
@@ -77,9 +87,12 @@ export default function AnalyticsPanel() {
       <Stat icon={Clock3} label="Открытия" value={String(summary.visits)} hint={`${visitors.length} ${visitors.length === 1 ? 'устройство' : 'устройства'}`} />
       <Stat icon={BookOpenCheck} label="Дочитано" value={`${summary.progress}%`} hint={summary.last ? `До элемента №${summary.last.max_position}` : 'Пока нет данных'} />
       <Stat icon={CheckCircle2} label="Финал" value={summary.completed ? 'Дочитала' : 'Ещё нет'} hint={summary.completed ? 'История была пройдена до конца' : 'Последняя страница ещё не достигнута'} />
+      <Stat icon={Heart} label="Реакции" value={String(reactions.length)} hint={reactions[0] ? `Последняя: ${reactions[0].emoji} · ${when(reactions[0].updated_at)}` : 'Она ещё не оставляла реакций'} />
     </div>
 
     {summary.last && <div className="rounded-[26px] border border-black/5 bg-[#F6EFE0] p-6"><div className="text-[10px] uppercase tracking-[2px] text-burgundy/45">последняя прочитанная точка</div><div className="mt-2 font-serif text-2xl text-burgundy">{summary.last.last_element_type ?? 'элемент истории'} · №{summary.last.max_position}</div><div className="mt-1 text-sm opacity-55">Событие истории от {when(summary.last.last_element_at)} · прогресс {summary.last.max_progress}%</div></div>}
+
+    {reactions.length > 0 && <div className="rounded-[26px] border border-black/5 bg-white/85 p-5 shadow-sm"><div className="flex items-center gap-2"><Heart size={17} className="text-burgundy/55" /><h2 className="font-serif text-2xl text-burgundy">Её реакции</h2></div><div className="mt-4 flex flex-wrap gap-2">{reactions.slice(0, 24).map((reaction) => <div key={reaction.id} className="rounded-2xl border border-burgundy/10 bg-[#FBF8F5] px-3 py-2"><span className="text-xl">{reaction.emoji}</span><span className="ml-2 text-[10px] opacity-45">{when(reaction.updated_at)}</span></div>)}</div></div>}
 
     <div className="rounded-[26px] border border-black/5 bg-white/85 p-5 shadow-sm">
       <div className="flex items-center gap-2"><Smartphone size={17} className="text-burgundy/55" /><h2 className="font-serif text-2xl text-burgundy">Последние открытия</h2></div>

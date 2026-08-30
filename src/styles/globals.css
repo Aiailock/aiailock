@@ -20,6 +20,12 @@ body {
   background: var(--cream);
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   font-family: 'DM Sans', sans-serif;
   color: var(--ink);
@@ -127,10 +133,43 @@ body {
 /* Final reader polish: keep the book narrow on desktop while preserving a fluid mobile canvas. */
 .reader-book { width: min(100%, 430px); margin-inline: auto; }
 .reader-silence { min-height: 16vh; }
-.story-media img, .story-media video { max-width: 100%; height: auto; }
+.story-media img, .story-media video { display: block; max-width: 100%; height: auto; }
+.story-media audio { max-width: 100%; }
+.story-copy,
+.overflow-wrap-anywhere,
+.reader-shell p,
+.reader-shell h1,
+.reader-shell h2,
+.reader-shell h3,
+.admin-shell p,
+.admin-shell td,
+.admin-shell h1,
+.admin-shell h2,
+.admin-shell h3 {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.reader-shell [data-reader-element],
+.reader-shell article,
+.reader-shell section,
+.admin-shell main,
+.admin-shell article,
+.admin-shell form {
+  min-width: 0;
+  max-width: 100%;
+}
+.screenshot-carousel {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.screenshot-carousel::-webkit-scrollbar { display: none; }
+.story-date-ribbon { box-shadow: 0 8px 24px -18px rgba(74,27,47,.55); }
 button, a, input, textarea, select, summary { -webkit-tap-highlight-color: transparent; }
 @media (max-width: 430px) {
-  body { min-width: 320px; }
+  body { min-width: 0; }
+  .admin-shell input,
+  .admin-shell textarea,
+  .admin-shell select { font-size: 16px; }
 }
 
 /* The reader keeps a faint paper grain without shipping a heavy bitmap. */

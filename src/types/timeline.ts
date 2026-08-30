@@ -65,7 +65,18 @@ export interface ElementStyle {
   decoration?: string[];
   animation?: string;
   font?: string;
-  zone?: 'default' | 'night' | 'burgundy' | 'pixel' | 'gif' | 'travel' | 'winter' | 'sepia' | 'rain' | 'romantic';
+  zone?: 'default' | 'night' | 'burgundy' | 'pixel' | 'gif' | 'travel' | 'winter' | 'sepia' | 'rain' | 'romantic' | 'forest' | 'dusk';
+  dateStyle?: string;
+  dateAlign?: 'left' | 'center' | 'right';
+  dateFont?: string;
+  hideTime?: boolean;
+  textAlign?: 'left' | 'center' | 'right';
+  spacing?: 'compact' | 'normal' | 'cinematic';
+  backgroundImageUrl?: string;
+  backgroundPosition?: string;
+  backgroundOverlay?: number;
+  externalMediaUrl?: string;
+  externalMediaKind?: 'image' | 'gif';
 }
 
 export type TimelineElementType =
@@ -77,7 +88,9 @@ export type TimelineElementType =
   | 'memory'
   | 'special'
   | 'interactive'
+  | 'gif'
   | 'screenshot'
+  | 'chapter'
   | 'year_break'
   | 'on_this_day'
   | 'milestone';

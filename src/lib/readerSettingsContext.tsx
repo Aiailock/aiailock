@@ -12,6 +12,7 @@ import { createContext, useContext } from 'react';
 //                                is rendered
 
 export type TimeFormatId = 'default' | '12h' | 'short' | 'relative' | 'weekday';
+export type DateStyleId = 'line' | 'centered' | 'ribbon' | 'handwritten' | 'capsule' | 'split';
 
 export const TIME_FORMAT_OPTIONS: { id: TimeFormatId; label: string; hint: string }[] = [
   { id: 'default', label: 'Обычный', hint: '3 марта 2024 · 21:40' },
@@ -28,12 +29,26 @@ export interface ReaderDisplaySettings {
   specialMomentLabel: string;
   timeFormat: TimeFormatId;
   readerFont: string;
+  dateStyle: DateStyleId;
+  dateAlign: 'left' | 'center' | 'right';
+  dateFont: string;
+  hideTime: boolean;
+  coverSubtitle: string;
+  closingMessage: string;
+  coverBackgroundUrl: string;
 }
 
 export const ReaderSettingsContext = createContext<ReaderDisplaySettings>({
   specialMomentLabel: DEFAULT_SPECIAL_MOMENT_LABEL,
   timeFormat: DEFAULT_TIME_FORMAT,
   readerFont: 'serif',
+  dateStyle: 'line',
+  dateAlign: 'left',
+  dateFont: 'sans',
+  hideTime: false,
+  coverSubtitle: 'история впереди',
+  closingMessage: 'история продолжается',
+  coverBackgroundUrl: '',
 });
 
 export function useReaderSettings() {
@@ -45,5 +60,15 @@ export function readDisplaySettingsFromTheme(theme: Record<string, unknown> | un
   const formatRaw = typeof theme?.timeFormat === 'string' ? theme.timeFormat : DEFAULT_TIME_FORMAT;
   const timeFormat = TIME_FORMAT_OPTIONS.some((o) => o.id === formatRaw) ? (formatRaw as TimeFormatId) : DEFAULT_TIME_FORMAT;
   const readerFont = typeof theme?.readerFont === 'string' && theme.readerFont ? theme.readerFont : 'serif';
-  return { specialMomentLabel: label, timeFormat, readerFont };
+  const allowedDateStyles: DateStyleId[] = ['line', 'centered', 'ribbon', 'handwritten', 'capsule', 'split'];
+  const rawDateStyle = typeof theme?.dateStyle === 'string' ? theme.dateStyle : 'line';
+  const dateStyle = allowedDateStyles.includes(rawDateStyle as DateStyleId) ? rawDateStyle as DateStyleId : 'line';
+  const rawAlign = typeof theme?.dateAlign === 'string' ? theme.dateAlign : 'left';
+  const dateAlign = rawAlign === 'center' || rawAlign === 'right' ? rawAlign : 'left';
+  const dateFont = typeof theme?.dateFont === 'string' && theme.dateFont ? theme.dateFont : 'sans';
+  const hideTime = theme?.hideTime === true;
+  const coverSubtitle = typeof theme?.coverSubtitle === 'string' && theme.coverSubtitle.trim() ? theme.coverSubtitle.trim() : 'история впереди';
+  const closingMessage = typeof theme?.closingMessage === 'string' && theme.closingMessage.trim() ? theme.closingMessage.trim() : 'история продолжается';
+  const coverBackgroundUrl = typeof theme?.coverBackgroundUrl === 'string' ? theme.coverBackgroundUrl.trim() : '';
+  return { specialMomentLabel: label, timeFormat, readerFont, dateStyle, dateAlign, dateFont, hideTime, coverSubtitle, closingMessage, coverBackgroundUrl };
 }

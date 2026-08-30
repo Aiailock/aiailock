@@ -363,7 +363,7 @@ npx tsx server/media/selfTest.ts
 npx tsx server/ai/selfTest.ts
 ```
 
-Then deploy migrations and all five Edge Functions as described in `README.md`.
+Then deploy migrations and all Edge Functions described in `README.md`, including `reader-analytics` and `reader-reaction`.
 
 
 ---

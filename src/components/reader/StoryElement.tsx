@@ -21,21 +21,21 @@ const moodLabel: Record<string, string> = {
 };
 
 export const bgByZone: Record<string, string> = {
-  default: 'linear-gradient(180deg,var(--cream),color-mix(in srgb,var(--blush) 30%,var(--cream)))',
-  romantic: 'linear-gradient(180deg,color-mix(in srgb,var(--cream) 78%,white),var(--blush))',
-  night: 'linear-gradient(180deg,#2C2140,#1F1730)',
-  burgundy: 'linear-gradient(180deg,var(--burgundy),color-mix(in srgb,var(--burgundy) 74%,black))',
-  pixel: 'linear-gradient(180deg,#0D1321,#1B2340)',
-  gif: 'linear-gradient(180deg,color-mix(in srgb,var(--gold) 18%,white),color-mix(in srgb,var(--gold) 55%,white))',
-  travel: 'linear-gradient(180deg,color-mix(in srgb,var(--peach) 20%,white),var(--peach))',
-  winter: 'linear-gradient(180deg,#EAF3FB,#D3E6F5)',
-  sepia: 'linear-gradient(180deg,#EFE3C9,#DCC9A0)',
-  rain: 'linear-gradient(180deg,#DCE3EA,#B9C6D1)',
+  default: 'linear-gradient(180deg,#0B0B0D,#151216)',
+  romantic: 'linear-gradient(180deg,#170D12,#2A101B)',
+  night: 'linear-gradient(180deg,#14101C,#08080D)',
+  burgundy: 'linear-gradient(180deg,#2B0E18,#120A0D)',
+  pixel: 'linear-gradient(180deg,#10131B,#111019)',
+  gif: 'linear-gradient(180deg,#1B160F,#2A2012)',
+  travel: 'linear-gradient(180deg,#19130F,#2A1B12)',
+  winter: 'linear-gradient(180deg,#10171D,#17232B)',
+  sepia: 'linear-gradient(180deg,#1D1711,#2A2118)',
+  rain: 'linear-gradient(180deg,#11161B,#1B232A)',
   // New: soft forest green with tree silhouettes (see Botanical "trees" kind).
-  forest: 'linear-gradient(180deg,#EAF0E1,#C7D8B6)',
+  forest: 'linear-gradient(180deg,#0E1511,#182319)',
   // New: a scene that visibly darkens as it enters view (see .dusk-veil in
   // globals.css) — for goodbyes, endings of a chapter, or bittersweet notes.
-  dusk: 'linear-gradient(180deg,#3B3452,#1B1730)',
+  dusk: 'linear-gradient(180deg,#17131F,#08070D)',
 };
 
 // Date/time formatting is style-selectable from Admin → Настройки
@@ -113,7 +113,7 @@ export function Frame({ frame, children }: { frame: string; children: React.Reac
     case 'wood': return <div className={`${common} max-w-[290px] bg-gradient-to-br from-[#8a5a34] to-[#6b4223] p-3 shadow-xl`}>{children}</div>;
     case 'neon': return <div className={`${common} max-w-[290px] bg-gradient-to-br from-[#FF6FB5] via-[#7CF7C4] to-[#7BB8FF] p-[2px] shadow-2xl`}><div className="bg-[#141420] p-2">{children}</div></div>;
     case 'pixel': return <div className={`${common} max-w-[260px] border-[4px] border-[#7CF7C4] bg-[#0D1321] p-2 shadow-[0_0_0_6px_#1B2340,0_0_0_10px_#FF6FB5]`}>{children}</div>;
-    case 'minimal': return <div className={`${common} max-w-[300px] bg-white p-2 shadow-md`}>{children}</div>;
+    case 'minimal': return <div className={`${common} max-w-[320px] overflow-hidden rounded-[24px] bg-transparent`}>{children}</div>;
     // --- new frame ideas, added on top of the approved reader-prototype set ---
     case 'hearts': return <div className={`${common} max-w-[290px] rounded-[16px] border border-blush/60 bg-white p-3 shadow-lg`}><HeartCorners />{children}</div>;
     case 'garland': return <div className={`${common} max-w-[300px] rounded-[14px] border border-gold/30 bg-white p-4 pt-6 shadow-lg`}><div aria-hidden className="absolute left-2 right-2 top-1 flex justify-between text-[10px] text-gold/70">{Array.from({ length: 9 }).map((_, i) => <span key={i}>✦</span>)}</div>{children}</div>;
@@ -169,19 +169,30 @@ export default function StoryElement({ row, token, galleryRows }: { row: PublicT
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start end', 'end start'] });
   const parallaxY = useTransform(scrollYProgress, [0, 1], reducedMotion ? [0, 0] : [-8, 8]);
 
+  if (row.type === 'quote') {
+    const quote = typeof row.metadata?.quote === 'string' ? row.metadata.quote : '';
+    const author = typeof row.metadata?.author === 'string' ? row.metadata.author : '';
+    return <MotionWrap reduced={reducedMotion}><section className="relative mx-auto flex min-h-[58vh] max-w-page items-center justify-center overflow-hidden bg-[#0B0B0D] px-7 py-24 text-center text-[#F4EFE6]"><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative max-w-[390px]"><div aria-hidden className="font-serif text-7xl leading-none text-gold/35">“</div><blockquote className="-mt-4 whitespace-pre-wrap font-serif text-[29px] italic leading-[1.55] sm:text-[34px]">{quote || 'Наша фраза'}</blockquote>{author && <footer className="mt-8 text-[11px] uppercase tracking-[3px] text-gold/70">{author}</footer>}<div className="mx-auto mt-9 h-px w-14 bg-gold/35"/></div></section></MotionWrap>;
+  }
+
+  if (row.type === 'pause') {
+    const pauseText = typeof row.metadata?.text === 'string' ? row.metadata.text : '';
+    return <MotionWrap reduced={reducedMotion}><section className="relative mx-auto flex min-h-[52vh] max-w-page items-center justify-center overflow-hidden bg-[#0D0C0E] px-7 py-24 text-center text-[#F4EFE6]"><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative max-w-xs"><div className="mx-auto h-px w-16 bg-gold/35"/>{pauseText && <p className="mt-8 whitespace-pre-wrap font-script text-2xl leading-relaxed text-[#F4EFE6]/72">{pauseText}</p>}<div aria-hidden className="mt-8 text-lg text-gold/55">♡</div></div></section></MotionWrap>;
+  }
+
   if (row.type === 'chapter') {
     const chapterTitle = typeof row.metadata?.title === 'string' ? row.metadata.title : 'Новая глава';
     const chapterSubtitle = typeof row.metadata?.subtitle === 'string' ? row.metadata.subtitle : '';
     const chapterNumber = typeof row.metadata?.number === 'string' || typeof row.metadata?.number === 'number' ? String(row.metadata.number) : '';
     const chapterBackground = safeRemoteUrl(row.style?.backgroundImageUrl);
-    return <MotionWrap reduced={reducedMotion}><section id={`chapter-${row.element_id}`} className="relative mx-auto flex min-h-[72vh] max-w-page items-center justify-center overflow-hidden px-6 py-20 text-center" style={chapterBackground ? { backgroundImage: `linear-gradient(rgba(35,17,28,.45),rgba(35,17,28,.68)),url(${JSON.stringify(chapterBackground)})`, backgroundSize: 'cover', backgroundPosition: String(row.style?.backgroundPosition ?? 'center') } : { background: bgByZone[zone] ?? bgByZone.default }}><div className="relative z-10 max-w-[360px]"><div className={`text-[10px] uppercase tracking-[4px] ${chapterBackground || ['night','burgundy','dusk'].includes(zone) ? 'text-white/55' : 'text-burgundy/45'}`}>{chapterNumber ? `глава ${chapterNumber}` : 'новая глава'}</div><div className={`mx-auto my-7 h-px w-16 ${chapterBackground || ['night','burgundy','dusk'].includes(zone) ? 'bg-white/35' : 'bg-gold/60'}`} /><h2 className={`overflow-wrap-anywhere font-serif text-[46px] leading-[1.04] ${chapterBackground || ['night','burgundy','dusk'].includes(zone) ? 'text-white' : 'text-burgundy'}`}>{chapterTitle}</h2>{chapterSubtitle && <p className={`mt-6 font-script text-2xl leading-relaxed ${chapterBackground || ['night','burgundy','dusk'].includes(zone) ? 'text-white/70' : 'text-burgundy/60'}`}>{chapterSubtitle}</p>}<div className={`mx-auto mt-10 text-2xl ${chapterBackground || ['night','burgundy','dusk'].includes(zone) ? 'text-white/45' : 'text-gold/70'}`}>♡</div></div></section></MotionWrap>;
+    return <MotionWrap reduced={reducedMotion}><section id={`chapter-${row.element_id}`} className="relative mx-auto flex min-h-[76vh] max-w-page items-center justify-center overflow-hidden px-6 py-20 text-center text-[#F4EFE6]" style={chapterBackground ? { backgroundImage: `linear-gradient(rgba(8,7,9,.48),rgba(8,7,9,.78)),url(${JSON.stringify(chapterBackground)})`, backgroundSize: 'cover', backgroundPosition: String(row.style?.backgroundPosition ?? 'center') } : { background: bgByZone[zone] ?? bgByZone.default }}><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative z-10 max-w-[370px]"><div className="text-[10px] uppercase tracking-[4px] text-gold/65">{chapterNumber ? `глава ${chapterNumber}` : 'новая глава'}</div><div className="mx-auto my-8 h-px w-16 bg-gold/45"/><h2 className="overflow-wrap-anywhere font-serif text-[48px] leading-[1.04] text-[#F4EFE6] drop-shadow-lg">{chapterTitle}</h2>{chapterSubtitle && <p className="mt-7 font-script text-2xl leading-relaxed text-[#F4EFE6]/70">{chapterSubtitle}</p>}<div className="mx-auto mt-11 text-2xl text-gold/65">♡</div></div></section></MotionWrap>;
   }
 
-  if (row.type === 'year_break') return <MotionWrap reduced={reducedMotion}><section className="mx-auto flex min-h-[55vh] max-w-page items-center justify-center px-6 text-center"><div><div className="mx-auto mb-6 h-px w-16 bg-gold/60"/><div className="font-serif text-[68px] font-medium leading-none text-burgundy">{year(row.occurred_at)}</div><div className="mx-auto mt-5 h-px w-28 bg-gold/35"/><p className="mt-4 font-script text-2xl opacity-55">ещё одна глава</p></div></section></MotionWrap>;
+  if (row.type === 'year_break') return <MotionWrap reduced={reducedMotion}><section className="mx-auto flex min-h-[64vh] max-w-page items-center justify-center bg-[#0B0B0D] px-6 text-center text-[#F4EFE6]"><div><div className="mx-auto mb-7 h-px w-16 bg-gold/55"/><div className="font-serif text-[72px] font-medium leading-none text-[#F4EFE6]">{year(row.occurred_at)}</div><div className="mx-auto mt-6 h-px w-28 bg-gold/30"/><p className="mt-5 font-script text-2xl text-gold/70">ещё одна глава</p></div></section></MotionWrap>;
 
   if (row.type === 'on_this_day') {
     const previous = typeof row.metadata?.previous_text === 'string' ? row.metadata.previous_text : null;
-    return <MotionWrap reduced={reducedMotion}><section className="mx-auto flex min-h-[34vh] max-w-page items-center justify-center px-6"><div className="w-full border-l-2 border-gold/45 bg-white/35 px-6 py-8 shadow-sm"><div className="font-script text-2xl text-gold">в этот день</div><div className="mt-2 font-serif text-2xl text-burgundy">{wallClockDate(row.occurred_at)}</div>{previous && <p className="mt-5 whitespace-pre-wrap font-serif text-xl italic leading-relaxed text-ink/80">«{previous}»</p>}</div></section></MotionWrap>;
+    return <MotionWrap reduced={reducedMotion}><section className="mx-auto flex min-h-[42vh] max-w-page items-center justify-center bg-[#111012] px-6"><div className="w-full border-l border-gold/45 px-6 py-10 text-[#F4EFE6]"><div className="font-script text-2xl text-gold">в этот день</div><div className="mt-2 font-serif text-2xl text-[#F4EFE6]">{wallClockDate(row.occurred_at)}</div>{previous && <p className="mt-6 whitespace-pre-wrap font-serif text-xl italic leading-relaxed text-[#F4EFE6]/75">«{previous}»</p>}</div></section></MotionWrap>;
   }
 
   // BUGFIX: memory/special-moment text (`memory_body`, typed in Admin →
@@ -229,10 +240,10 @@ export default function StoryElement({ row, token, galleryRows }: { row: PublicT
   const photoReaction = media ? (row.reaction_emoji ?? null) : null;
   const textReaction = !media ? (row.reaction_emoji ?? null) : null;
   const shouldFrameText = !media && typeof row.style?.frame === 'string';
-  const darkFrame = ['stars', 'neon', 'pixel', 'moonlit'].includes(frame);
+  const lightFrame = ['polaroid', 'washi', 'ticket', 'sepia', 'hearts', 'postcard', 'wax-seal', 'torn', 'phone', 'locket', 'envelope'].includes(frame);
   const textColorClass = shouldFrameText
-    ? (darkFrame ? 'text-[#F4EAF0]' : 'text-ink')
-    : (safeRemoteUrl(row.style?.backgroundImageUrl) || zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-ink');
+    ? (lightFrame ? 'text-ink' : 'text-[#F4EFE6]')
+    : 'text-[#F4EFE6]';
 
   const textNode = text && (isLongLetter ? (
     <div className={`story-copy mx-auto min-w-0 max-w-[380px] space-y-5 ${textAlign} ${textColorClass}`}>
@@ -258,23 +269,24 @@ export default function StoryElement({ row, token, galleryRows }: { row: PublicT
 
   const content = (
     <article ref={ref} style={{ background: bgByZone[zone] ?? bgByZone.default, ...(backgroundImage ? { backgroundImage: `url(${JSON.stringify(backgroundImage)})`, backgroundSize: 'cover', backgroundPosition, backgroundAttachment: 'scroll' } : {}) }} className={`relative w-full min-w-0 overflow-hidden transition-[background] duration-[1800ms] ${spacing}`}>
-      {backgroundImage && <div aria-hidden className="absolute inset-0 bg-[#25151d]" style={{ opacity: overlayOpacity }} />}
+      {backgroundImage && <div aria-hidden className="absolute inset-0 bg-[#0A0809]" style={{ opacity: overlayOpacity }} />}
+      <div aria-hidden className="cinema-vignette absolute inset-0" />
       {zone === 'forest' && <Treeline />}
       {zone === 'dusk' && <div className="dusk-veil" />}
       {decoration && <EffectsLayer decorations={decoration} seed={row.sort_tiebreak + row.occurred_at.length} gifUrl={gifUrl} />}
       <div className="relative mx-auto w-full max-w-page px-[22px]">
         {isSpecial && <div className="mb-8 text-center"><div className="text-[12px] uppercase tracking-[3px] text-gold">{specialMomentLabel}</div><div className="mx-auto mt-4 h-px w-12 bg-gold/55" /></div>}
-        <DateStamp date={wallClockDate(row.occurred_at, effectiveTimeFormat)} time={!hideTime && effectiveTimeFormat !== 'relative' ? wallClockTime(row.occurred_at, effectiveTimeFormat) : null} label={label} variant={effectiveDateStyle} align={effectiveDateAlign} font={effectiveDateFont} dark={Boolean(backgroundImage) || zone === 'night' || zone === 'burgundy' || zone === 'dusk'} />
-        {title && !isInteractive && <h3 className={`mb-4 text-center font-serif text-2xl ${zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'text-[#F4EAF0]' : 'text-burgundy'}`}>{title}</h3>}
-        {isInteractive && text ? <InteractiveMoment kind={interactionKind} title={title} text={text} row={row} token={token} dark={zone === 'night' || zone === 'burgundy' || zone === 'dusk'} fontClass={fontOverride ?? 'font-serif'} /> : <>
+        <DateStamp date={wallClockDate(row.occurred_at, effectiveTimeFormat)} time={!hideTime && effectiveTimeFormat !== 'relative' ? wallClockTime(row.occurred_at, effectiveTimeFormat) : null} label={label} variant={effectiveDateStyle} align={effectiveDateAlign} font={effectiveDateFont} dark />
+        {title && !isInteractive && <h3 className="mb-5 text-center font-serif text-3xl text-[#F4EFE6]">{title}</h3>}
+        {isInteractive && text ? <InteractiveMoment kind={interactionKind} title={title} text={text} row={row} token={token} dark fontClass={fontOverride ?? 'font-serif'} /> : <>
           {media && <motion.div style={{ y: parallaxY }} className="mb-8 min-w-0 max-w-full">
             {galleryRows && galleryRows.length > 1 ? <ScreenshotGallery rows={galleryRows} token={token} renderFrame={(children, minimal) => <Frame frame={minimal ? 'minimal' : frame}>{children}</Frame>} /> : <Frame frame={frame}><ReaderMedia row={row} token={token} /></Frame>}
             {photoReaction && <div className="mt-3 text-center font-script text-lg opacity-70">{photoReaction}</div>}
           </motion.div>}
           {framedTextNode}
         </>}
-        {row.screenshot_reaction_emoji && <div className={`mx-auto mt-5 max-w-[330px] rounded-2xl border px-4 py-3 text-center ${backgroundImage || zone === 'night' || zone === 'burgundy' || zone === 'dusk' ? 'border-white/10 bg-white/5 text-white/75' : 'border-burgundy/10 bg-white/35 text-burgundy/75'}`}><span className="text-xl">{row.screenshot_reaction_emoji}</span>{row.screenshot_reaction_text && <p className="mt-1 overflow-wrap-anywhere font-script text-lg">{row.screenshot_reaction_text}</p>}</div>}
-        {(row.screenshot_id || isSpecial) && <ReaderReaction elementId={row.element_id} token={token} dark={Boolean(backgroundImage) || zone === 'night' || zone === 'burgundy' || zone === 'dusk'} />}
+        {row.screenshot_reaction_emoji && <div className="mx-auto mt-6 max-w-[330px] border-t border-white/10 px-4 py-4 text-center text-white/75"><span className="text-xl">{row.screenshot_reaction_emoji}</span>{row.screenshot_reaction_text && <p className="mt-1 overflow-wrap-anywhere font-script text-lg">{row.screenshot_reaction_text}</p>}</div>}
+        {(row.screenshot_id || isSpecial) && <ReaderReaction elementId={row.element_id} token={token} dark />}
       </div>
     </article>
   );

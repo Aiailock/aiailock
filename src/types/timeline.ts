@@ -91,6 +91,8 @@ export type TimelineElementType =
   | 'gif'
   | 'screenshot'
   | 'chapter'
+  | 'quote'
+  | 'pause'
   | 'year_break'
   | 'on_this_day'
   | 'milestone';
@@ -106,6 +108,7 @@ export interface TimelineElement {
   screenshotId: string | null;
   style: ElementStyle;
   isPublished: boolean;
+  visibleFrom: string | null;
   importance: number;
   metadata: Record<string, unknown>;
 

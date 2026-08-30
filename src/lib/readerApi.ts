@@ -14,6 +14,7 @@ export interface PublicTimelineRow {
   style: Record<string, unknown> | null;
   mood: string | null;
   is_published: boolean;
+  visible_from: string | null;
   message_id: string | null;
   media_id: string | null;
   memory_id: string | null;
@@ -92,6 +93,23 @@ export async function fetchPublicTimeline(cursor: PublicTimelineCursor | null, t
     headers: token ? { 'x-reader-access-token': token } : undefined,
   });
   if (error || data?.error) throw new Error(error?.message ?? data?.error ?? 'Не удалось загрузить историю.');
+  return {
+    elements: (data?.elements ?? []) as PublicTimelineRow[],
+    hasMore: Boolean(data?.hasMore),
+    nextCursor: data?.nextCursor ?? null,
+  };
+}
+
+export async function fetchResumeTimeline(elementId: string, token: string): Promise<{
+  elements: PublicTimelineRow[];
+  hasMore: boolean;
+  nextCursor: PublicTimelineCursor | null;
+}> {
+  const { data, error } = await supabase.functions.invoke('public-timeline', {
+    body: { resumeElementId: elementId },
+    headers: token ? { 'x-reader-access-token': token } : undefined,
+  });
+  if (error || data?.error) throw new Error(error?.message ?? data?.error ?? 'Не удалось продолжить историю.');
   return {
     elements: (data?.elements ?? []) as PublicTimelineRow[],
     hasMore: Boolean(data?.hasMore),

@@ -3,13 +3,15 @@ import { BookHeart, Check, ImagePlus, Layers3, Save, Sparkles, WandSparkles } fr
 import { supabase } from '@/lib/supabaseClient';
 import StyleEditor, { type StyleValue } from './StyleEditor';
 
-type CreateKind = 'note' | 'memory' | 'special' | 'chapter' | 'album' | 'gif' | 'interactive';
+type CreateKind = 'note' | 'memory' | 'special' | 'chapter' | 'quote' | 'pause' | 'album' | 'gif' | 'interactive';
 
 const KINDS: Array<{ id: CreateKind; label: string; hint: string }> = [
   { id: 'note', label: 'Запись', hint: 'Текст как новая страница дневника' },
   { id: 'memory', label: 'Воспоминание', hint: 'Текст и необязательное фото' },
   { id: 'special', label: 'Особый момент', hint: 'Большая эмоциональная сцена' },
   { id: 'chapter', label: 'Глава', hint: 'Красивый переход между периодами' },
+  { id: 'quote', label: 'Цитата', hint: 'Большая фраза как кадр из фильма' },
+  { id: 'pause', label: 'Пауза', hint: 'Воздух и тишина между сценами' },
   { id: 'album', label: 'Альбом', hint: 'Несколько скриншотов в одной сцене' },
   { id: 'gif', label: 'GIF', hint: 'Файл или ссылка между страницами' },
   { id: 'interactive', label: 'Сюрприз', hint: 'Подарок, письмо или секрет' },
@@ -31,6 +33,7 @@ interface Draft {
   occurredAt: string;
   style: StyleValue;
   published: boolean;
+  visibleFrom: string;
   interaction: string;
   gifUrl: string;
   albumLayout: string;
@@ -40,7 +43,7 @@ interface Draft {
 
 const DRAFT_KEY = 'for-you-mobile-studio-draft-v1';
 const nowForInput = () => new Date().toISOString().slice(0, 16);
-const emptyDraft = (): Draft => ({ kind: 'note', title: '', body: '', occurredAt: nowForInput(), style: { dateStyle: 'line', spacing: 'normal' }, published: true, interaction: 'gift', gifUrl: '', albumLayout: 'carousel', reactionEmoji: '❤', reactionText: '' });
+const emptyDraft = (): Draft => ({ kind: 'note', title: '', body: '', occurredAt: nowForInput(), style: { dateStyle: 'line', spacing: 'normal' }, published: true, visibleFrom: '', interaction: 'gift', gifUrl: '', albumLayout: 'carousel', reactionEmoji: '❤', reactionText: '' });
 
 function readDraft(): Draft {
   try {
@@ -81,6 +84,8 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
     try {
       if (!draft.occurredAt) throw new Error('Укажи дату страницы.');
       const occurredAt = `${draft.occurredAt}Z`;
+      const visibleFrom = draft.visibleFrom ? new Date(draft.visibleFrom).toISOString() : null;
+      const visibility = { is_published: visibleFrom ? true : draft.published, visible_from: visibleFrom };
       const style: StyleValue = { ...draft.style };
       if (draft.kind === 'gif' && draft.gifUrl.trim()) {
         style.externalMediaUrl = draft.gifUrl.trim();
@@ -92,8 +97,18 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         const { count } = await supabase.from('timeline_elements').select('*', { count: 'exact', head: true }).eq('type', 'chapter');
         const { error } = await supabase.from('timeline_elements').insert({
           type: 'chapter', occurred_at: occurredAt, sort_tiebreak: -20,
-          style, is_published: draft.published,
+          style, ...visibility,
           metadata: { title: draft.title.trim(), subtitle: draft.body.trim() || null, number: Number(count ?? 0) + 1 },
+        });
+        if (error) throw error;
+      } else if (draft.kind === 'quote' || draft.kind === 'pause') {
+        if (draft.kind === 'quote' && !draft.body.trim()) throw new Error('Напиши текст цитаты.');
+        const { error } = await supabase.from('timeline_elements').insert({
+          type: draft.kind, occurred_at: occurredAt, sort_tiebreak: draft.kind === 'quote' ? -10 : 20,
+          style: { zone: 'default', spacing: 'cinematic', ...style }, ...visibility,
+          metadata: draft.kind === 'quote'
+            ? { quote: draft.body.trim(), author: draft.title.trim() || null }
+            : { text: draft.body.trim() || null },
         });
         if (error) throw error;
       } else if (draft.kind === 'note') {
@@ -105,7 +120,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
           original_text: draft.body.trim(), display_text: draft.body.trim(), has_media: false,
         });
         if (error) throw error;
-        const { error: timelineError } = await supabase.from('timeline_elements').update({ style, is_published: draft.published }).eq('message_id', id);
+        const { error: timelineError } = await supabase.from('timeline_elements').update({ style, ...visibility }).eq('message_id', id);
         if (timelineError) throw timelineError;
       } else if (draft.kind === 'album') {
         if (files.length === 0) throw new Error('Выбери один или несколько скриншотов.');
@@ -128,7 +143,8 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
             reaction_text: index === 0 ? draft.reactionText.trim() || null : null,
           });
           if (error) throw error;
-          if (!draft.published) await supabase.from('timeline_elements').update({ is_published: false }).eq('screenshot_id', id);
+          const { error: visibilityError } = await supabase.from('timeline_elements').update(visibility).eq('screenshot_id', id);
+          if (visibilityError) throw visibilityError;
         }
       } else {
         const isGif = draft.kind === 'gif';
@@ -148,7 +164,8 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
           photo_storage_path: photoPath, style, metadata,
         });
         if (error) throw error;
-        if (!draft.published) await supabase.from('timeline_elements').update({ is_published: false }).eq('memory_id', id);
+        const { error: visibilityError } = await supabase.from('timeline_elements').update(visibility).eq('memory_id', id);
+        if (visibilityError) throw visibilityError;
       }
 
       localStorage.removeItem(DRAFT_KEY);
@@ -173,8 +190,8 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
 
         <div className="mt-5 rounded-2xl bg-[#F6EFE0] p-3"><div className="flex items-center gap-2 text-xs font-medium text-burgundy"><WandSparkles size={14} /> Готовый стиль — без ручной настройки</div><div className="mt-2 flex flex-wrap gap-2">{PRESETS.map((preset) => <button type="button" key={preset.id} onClick={() => patch({ style: { ...draft.style, ...preset.style } })} className="rounded-full border border-burgundy/10 bg-white/70 px-3 py-1.5 text-[11px] text-burgundy">{preset.label}</button>)}</div></div>
 
-        <input value={draft.title} onChange={(event) => patch({ title: event.target.value })} placeholder={draft.kind === 'chapter' ? 'Название главы' : 'Название (необязательно)'} className="mt-4 w-full rounded-xl border p-3" />
-        <textarea value={draft.body} onChange={(event) => patch({ body: event.target.value })} placeholder={draft.kind === 'chapter' ? 'Короткая фраза под названием' : draft.kind === 'interactive' ? 'Что откроется после нажатия?' : draft.kind === 'album' ? 'Общая подпись к альбому' : 'Текст страницы'} className="mt-3 min-h-36 w-full rounded-xl border p-3" />
+        <input value={draft.title} onChange={(event) => patch({ title: event.target.value })} placeholder={draft.kind === 'chapter' ? 'Название главы' : draft.kind === 'quote' ? 'Автор или подпись (необязательно)' : 'Название (необязательно)'} className="mt-4 w-full rounded-xl border p-3" />
+        <textarea value={draft.body} onChange={(event) => patch({ body: event.target.value })} placeholder={draft.kind === 'chapter' ? 'Короткая фраза под названием' : draft.kind === 'quote' ? 'Та самая фраза…' : draft.kind === 'pause' ? 'Несколько тихих слов — или оставь пустым' : draft.kind === 'interactive' ? 'Что откроется после нажатия?' : draft.kind === 'album' ? 'Общая подпись к альбому' : 'Текст страницы'} className="mt-3 min-h-36 w-full rounded-xl border p-3" />
         <input type="datetime-local" value={draft.occurredAt} onChange={(event) => patch({ occurredAt: event.target.value })} className="mt-3 w-full rounded-xl border p-3" />
 
         {(draft.kind === 'memory' || draft.kind === 'special' || draft.kind === 'gif' || draft.kind === 'interactive' || draft.kind === 'album') && <label className="mt-3 block rounded-xl border border-dashed border-burgundy/15 bg-[#FBF8F5] p-3 text-sm"><span className="flex items-center gap-2"><ImagePlus size={16} />{draft.kind === 'album' ? 'Скриншоты (можно выбрать сразу несколько)' : draft.kind === 'gif' ? 'GIF-файл' : 'Фото или GIF (необязательно)'}</span><input type="file" multiple={draft.kind === 'album'} accept={draft.kind === 'gif' ? 'image/gif,.gif' : 'image/*,.gif'} onChange={(event) => setFiles(Array.from(event.target.files ?? []))} className="mt-2 block w-full text-xs" />{files.length > 0 && <span className="mt-2 block text-[11px] text-burgundy/60">Выбрано: {files.length}</span>}</label>}
@@ -183,7 +200,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         {draft.kind === 'interactive' && <label className="mt-3 block text-sm">Как открывается<select value={draft.interaction} onChange={(event) => patch({ interaction: event.target.value })} className="mt-2 w-full rounded-xl border p-3"><option value="gift">Подарок</option><option value="letter">Письмо</option><option value="spoiler">Секрет</option><option value="flip">Перевёртыш</option><option value="photo-reveal">Проявить фото</option><option value="promise">Обещание</option></select></label>}
         {draft.kind === 'album' && <div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-sm">Оформление альбома<select value={draft.albumLayout} onChange={(event) => patch({ albumLayout: event.target.value })} className="mt-2 w-full rounded-xl border p-3"><option value="carousel">Карусель — листать пальцем</option><option value="stack">Стопка снимков</option><option value="collage">Коллаж</option></select></label><label className="text-sm">Твоя реакция<div className="mt-2 flex gap-2"><select value={draft.reactionEmoji} onChange={(event) => patch({ reactionEmoji: event.target.value })} className="w-20 rounded-xl border p-3"><option>❤</option><option>🥹</option><option>😂</option><option>✨</option><option>💔</option></select><input value={draft.reactionText} onChange={(event) => patch({ reactionText: event.target.value })} placeholder="например: до сих пор улыбаюсь" className="min-w-0 flex-1 rounded-xl border p-3" /></div></label></div>}
 
-        <label className="mt-4 flex items-center gap-2 rounded-xl bg-black/[.025] p-3 text-sm"><input type="checkbox" checked={draft.published} onChange={(event) => patch({ published: event.target.checked })} /> Сразу показать ей в reader</label>
+        <div className="mt-4 rounded-2xl bg-black/[.025] p-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.published} onChange={(event) => patch({ published: event.target.checked })} disabled={Boolean(draft.visibleFrom)} /> Сразу показать ей в reader</label><label className="mt-3 block text-xs text-burgundy/65">Или открыть автоматически позже<input type="datetime-local" value={draft.visibleFrom} onChange={(event) => patch({ visibleFrom: event.target.value })} className="mt-2 w-full rounded-xl border p-3 text-sm" /><span className="mt-1 block text-[10px] opacity-60">Если дата указана, сцена останется скрытой до этого момента.</span></label></div>
         <div className="mt-4 flex flex-wrap gap-2"><button disabled={busy} className="rounded-xl bg-burgundy px-5 py-3 text-sm text-white shadow disabled:opacity-45"><Save size={15} className="mr-1 inline" />{busy ? 'Добавляю…' : `Добавить: ${selectedKind.label}`}</button><button type="button" onClick={reset} className="rounded-xl border px-4 py-3 text-sm">Очистить</button></div>
         {message && <div className={`mt-4 rounded-xl p-3 text-sm ${message.startsWith('Готово') ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-900'}`}>{message}{message.startsWith('Готово') && <button type="button" onClick={onOpenTimeline} className="mt-3 block rounded-lg border border-emerald-700/20 bg-white/60 px-3 py-2 text-xs">Открыть и редактировать в Истории</button>}</div>}
       </form>

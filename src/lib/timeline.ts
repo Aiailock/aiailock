@@ -50,6 +50,7 @@ function mapElement(row: Awaited<ReturnType<typeof fetchPublicTimeline>>['elemen
     screenshotId: row.screenshot_id,
     style: styleOf(row.style),
     isPublished: Boolean(row.is_published),
+    visibleFrom: row.visible_from,
     importance: Number(row.importance ?? row.memory_importance ?? 0),
     metadata: row.metadata ?? {},
     message,

@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     if (!ALLOWED.has(emoji)) throw new HttpError(400, 'Эта реакция не поддерживается.');
 
     const db = serviceClient();
-    const { data: published, error: publishedError } = await db.from('timeline_elements').select('id').eq('id', elementId).eq('is_published', true).maybeSingle();
+    const { data: published, error: publishedError } = await db.from('reader_timeline_data').select('element_id').eq('element_id', elementId).maybeSingle();
     if (publishedError) throw new Error(publishedError.message);
     if (!published) throw new HttpError(404, 'Элемент истории не найден.');
 
@@ -86,4 +86,3 @@ Deno.serve(async (req) => {
     return json({ error: message }, error instanceof HttpError ? error.status : 500);
   }
 });
-

@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Save,
   Settings2,
+  ShieldCheck,
   Sparkles,
   Star,
   Trash2,
@@ -40,6 +41,7 @@ import AnalyticsPanel from "./AnalyticsPanel";
 import { ALIGN_OPTIONS, DATE_STYLE_OPTIONS, FONT_OPTIONS } from "@/lib/styleOptions";
 import QuickCreatePanel from "./QuickCreatePanel";
 import { safeRemoteUrl } from "@/lib/safeUrl";
+import SafetyPanel from "./SafetyPanel";
 
 interface ImportRow {
   id: string;
@@ -68,6 +70,7 @@ interface TimelineRow {
   mood: string | null;
   importance: number;
   is_published: boolean;
+  visible_from: string | null;
   metadata: Record<string, unknown>;
 }
 interface MessageRow {
@@ -120,6 +123,7 @@ type Tab =
   | "dashboard"
   | "create"
   | "analytics"
+  | "safety"
   | "import"
   | "timeline"
   | "memories"
@@ -133,6 +137,7 @@ const tabs: Array<[Tab, string]> = [
   ["dashboard", "Обзор"],
   ["create", "Добавить"],
   ["analytics", "Чтение"],
+  ["safety", "Сохранность"],
   ["timeline", "История"],
   ["memories", "Воспоминания"],
   ["special", "Особенные"],
@@ -144,7 +149,7 @@ const tabs: Array<[Tab, string]> = [
   ["preview", "Preview"],
 ];
 const tabIcons: Record<Tab, typeof BarChart3> = {
-  dashboard: BarChart3, create: Plus, analytics: Activity, timeline: CheckSquare2, memories: Star,
+  dashboard: BarChart3, create: Plus, analytics: Activity, safety: ShieldCheck, timeline: CheckSquare2, memories: Star,
   special: Sparkles, screenshots: ImagePlus, media: Images, import: FileArchive,
   ai: Sparkles, settings: Settings2, preview: Eye,
 };
@@ -170,6 +175,9 @@ function dateTime(value: string) {
     timeStyle: "short",
     timeZone: "UTC",
   }).format(new Date(value));
+}
+function localDateTime(value: string) {
+  return new Intl.DateTimeFormat("ru-RU", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 export default function AdminDashboard() {
@@ -216,6 +224,7 @@ export default function AdminDashboard() {
           <DashboardPanel onTab={setTab} refreshKey={refreshKey} />
         )}
         {tab === "analytics" && <AnalyticsPanel />}
+        {tab === "safety" && <SafetyPanel />}
         {tab === "create" && <QuickCreatePanel onCreated={() => setRefreshKey((x) => x + 1)} onOpenTimeline={() => setTab("timeline")} />}
         {tab === "import" && (
           <ImportPanel onDone={() => setRefreshKey((x) => x + 1)} />
@@ -789,6 +798,8 @@ function MessageAnchorPicker({
 type InsertKind =
   | "message"
   | "chapter"
+  | "quote"
+  | "pause"
   | "gif"
   | "special"
   | "memory"
@@ -802,6 +813,8 @@ type InsertKind =
 const insertKindLabel: Record<InsertKind, string> = {
   message: "Сообщение",
   chapter: "Глава",
+  quote: "Цитата",
+  pause: "Пауза",
   gif: "GIF",
   special: "Особый момент",
   memory: "Воспоминание",
@@ -883,8 +896,8 @@ function InsertGap({
         </button>
       </div>
     );
-  const hasTitle = insertKind !== "screenshot" && insertKind !== "message";
-  const hasPhoto = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "chapter";
+  const hasTitle = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "pause";
+  const hasPhoto = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "chapter" && insertKind !== "quote" && insertKind !== "pause";
   return (
     <div className="my-2 rounded-2xl border border-dashed border-burgundy/25 bg-[#FBF3EE] p-3">
       {!insertKind ? (
@@ -901,7 +914,7 @@ function InsertGap({
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
             {(
-              ["message", "chapter", "gif", "special", "memory", "screenshot"] as InsertKind[]
+              ["message", "chapter", "quote", "pause", "gif", "special", "memory", "screenshot"] as InsertKind[]
             ).map((k) => (
               <button
                 key={k}
@@ -976,6 +989,10 @@ function InsertGap({
                 ? "Подпись (необязательно)"
                 : insertKind === "chapter"
                   ? "Короткая фраза под названием главы"
+                : insertKind === "quote"
+                  ? "Та самая фраза"
+                : insertKind === "pause"
+                  ? "Тихая подпись — можно оставить пустой"
                 : insertKind === "message"
                   ? "Текст сообщения"
                   : interactionKinds.has(insertKind)
@@ -1055,8 +1072,12 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [dateEditing, setDateEditing] = useState<string | null>(null);
   const [dateValue, setDateValue] = useState("");
+  const [scheduleEditing, setScheduleEditing] = useState<string | null>(null);
+  const [scheduleValue, setScheduleValue] = useState("");
   const [chapterEditing, setChapterEditing] = useState<string | null>(null);
   const [chapterForm, setChapterForm] = useState({ title: "", subtitle: "", number: "" });
+  const [sceneEditing, setSceneEditing] = useState<string | null>(null);
+  const [sceneForm, setSceneForm] = useState({ title: "", body: "" });
 
   // Сортировка по возрастанию (старое → новое), как в самой читалке — так
   // порядок карточек в админке совпадает с тем, что увидит читатель, и
@@ -1066,7 +1087,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
       supabase
         .from("timeline_elements")
         .select(
-          "id,type,occurred_at,message_id,media_id,memory_id,screenshot_id,style,mood,importance,is_published,metadata",
+          "id,type,occurred_at,message_id,media_id,memory_id,screenshot_id,style,mood,importance,is_published,visible_from,metadata",
         )
         .order("occurred_at", { ascending: true })
         .range(page * pageSize, page * pageSize + pageSize - 1),
@@ -1213,6 +1234,14 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     const { error } = await supabase.from("timeline_elements").update({ metadata }).eq("id", row.id);
     if (error) window.alert(error.message);
     else { setChapterEditing(null); await load(); }
+  }
+  async function saveScene(row: TimelineRow) {
+    const metadata = row.type === "quote"
+      ? { ...(row.metadata ?? {}), quote: sceneForm.body.trim(), author: sceneForm.title.trim() || null }
+      : { ...(row.metadata ?? {}), text: sceneForm.body.trim() || null };
+    const { error } = await supabase.from("timeline_elements").update({ metadata }).eq("id", row.id);
+    if (error) window.alert(error.message);
+    else { setSceneEditing(null); await load(); }
   }
   async function toggle(row: TimelineRow) {
     const { error } = await supabase
@@ -1369,6 +1398,13 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     else { setDateEditing(null); await load(); }
   }
 
+  async function saveSchedule(row: TimelineRow) {
+    const visibleFrom = scheduleValue ? new Date(scheduleValue).toISOString() : null;
+    const { error } = await supabase.from("timeline_elements").update({ visible_from: visibleFrom, ...(visibleFrom ? { is_published: true } : {}) }).eq("id", row.id);
+    if (error) window.alert(error.message);
+    else { setScheduleEditing(null); await load(); }
+  }
+
   function openInsert(prevId: string | null, nextId: string | null) {
     setInsertGap({ prevId, nextId });
     setInsertKind(null);
@@ -1409,6 +1445,14 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
             display_text: insertBody.trim(),
             has_media: false,
           });
+        if (error) throw error;
+      } else if (insertKind === "quote" || insertKind === "pause") {
+        if (insertKind === "quote" && !insertBody.trim()) throw new Error("Напиши текст цитаты.");
+        const { error } = await supabase.from("timeline_elements").insert({
+          id, type: insertKind, occurred_at: at, sort_tiebreak: insertKind === "quote" ? -10 : 20,
+          style: { zone: "default", spacing: "cinematic" }, is_published: true,
+          metadata: insertKind === "quote" ? { quote: insertBody.trim(), author: insertTitle.trim() || null } : { text: insertBody.trim() || null },
+        });
         if (error) throw error;
       } else if (insertKind === "chapter") {
         if (!insertTitle.trim()) throw new Error("Напиши название главы.");
@@ -1672,6 +1716,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                   <span>·</span>
                   <span>{dateTime(row.occurred_at)}</span>
                   {row.mood && <span>· {row.mood}</span>}
+                  {row.visible_from && <span className="rounded-full bg-gold/20 px-2 py-1 text-burgundy">по расписанию · {localDateTime(row.visible_from)}</span>}
                   <span className="ml-auto">важность {row.importance}</span>
                 </div>
                 {m && (
@@ -1862,6 +1907,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                     );
                   })()}
                 {row.type === "chapter" && <div className="mt-3 rounded-xl bg-white p-3"><div className="text-[10px] uppercase tracking-[1.6px] text-gold">глава {String(row.metadata?.number ?? "")}</div>{chapterEditing === row.id ? <div className="mt-2 space-y-2"><input value={chapterForm.title} onChange={(event) => setChapterForm({ ...chapterForm, title: event.target.value })} placeholder="Название главы" className="w-full rounded-xl border p-3 text-sm" /><textarea value={chapterForm.subtitle} onChange={(event) => setChapterForm({ ...chapterForm, subtitle: event.target.value })} placeholder="Подзаголовок" className="min-h-20 w-full rounded-xl border p-3 text-sm" /><input value={chapterForm.number} onChange={(event) => setChapterForm({ ...chapterForm, number: event.target.value })} placeholder="Номер" inputMode="numeric" className="w-full rounded-xl border p-3 text-sm" /><button type="button" onClick={() => void saveChapter(row)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить главу</button></div> : <><div className="mt-1 font-serif text-2xl text-burgundy">{String(row.metadata?.title ?? "Новая глава")}</div>{row.metadata?.subtitle && <p className="mt-1 text-sm opacity-55">{String(row.metadata.subtitle)}</p>}</>}</div>}
+                {(row.type === "quote" || row.type === "pause") && <div className="mt-3 rounded-xl bg-white p-3">{sceneEditing === row.id ? <div className="space-y-2">{row.type === "quote" && <input value={sceneForm.title} onChange={(event) => setSceneForm({ ...sceneForm, title: event.target.value })} placeholder="Автор или подпись" className="w-full rounded-xl border p-3 text-sm"/>}<textarea value={sceneForm.body} onChange={(event) => setSceneForm({ ...sceneForm, body: event.target.value })} placeholder={row.type === "quote" ? "Текст цитаты" : "Текст паузы"} className="min-h-24 w-full rounded-xl border p-3 text-sm"/><button type="button" onClick={() => void saveScene(row)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить сцену</button></div> : <><div className="text-[10px] uppercase tracking-[1.6px] text-gold">{row.type === "quote" ? "цитата" : "пауза"}</div><p className="mt-2 whitespace-pre-wrap font-serif text-xl">{String(row.type === "quote" ? row.metadata?.quote ?? "" : row.metadata?.text ?? "Тихая пауза")}</p>{row.type === "quote" && row.metadata?.author && <div className="mt-2 text-xs opacity-50">{String(row.metadata.author)}</div>}</>}</div>}
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button type="button" aria-label="Переместить выше" title="Выше" disabled={!reorderable || i === 0 || busyId === row.id} onClick={() => moveOne(row, -1)} className="rounded-lg border px-2.5 py-2 text-xs disabled:opacity-25"><ArrowUp size={14} /></button>
                   <button type="button" aria-label="Переместить ниже" title="Ниже" disabled={!reorderable || i === visible.length - 1 || busyId === row.id} onClick={() => moveOne(row, 1)} className="rounded-lg border px-2.5 py-2 text-xs disabled:opacity-25"><ArrowDown size={14} /></button>
@@ -1888,9 +1934,12 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                       } else if (row.type === "chapter") {
                         setChapterEditing(row.id);
                         setChapterForm({ title: String(row.metadata?.title ?? ""), subtitle: String(row.metadata?.subtitle ?? ""), number: String(row.metadata?.number ?? "") });
+                      } else if (row.type === "quote" || row.type === "pause") {
+                        setSceneEditing(row.id);
+                        setSceneForm({ title: String(row.metadata?.author ?? ""), body: String(row.type === "quote" ? row.metadata?.quote ?? "" : row.metadata?.text ?? "") });
                       }
                     }}
-                    disabled={!m && !row.memory_id && !row.screenshot_id && row.type !== "chapter"}
+                    disabled={!m && !row.memory_id && !row.screenshot_id && !["chapter", "quote", "pause"].includes(row.type)}
                     className="rounded-lg border px-3 py-2 text-xs disabled:opacity-30"
                   >
                     Текст
@@ -1901,6 +1950,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                   >
                     <CalendarClock size={13} className="mr-1 inline" />Дата
                   </button>
+                  <button onClick={() => { setScheduleEditing(scheduleEditing === row.id ? null : row.id); setScheduleValue(row.visible_from ? new Date(new Date(row.visible_from).getTime() - new Date(row.visible_from).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ""); }} className="rounded-lg border px-3 py-2 text-xs"><CalendarClock size={13} className="mr-1 inline" />{row.visible_from ? "Расписание" : "Показать позже"}</button>
                   <button
                     onClick={() => {
                       setEditing(editing === row.id ? null : row.id);
@@ -1926,6 +1976,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                   </button>
                 </div>
                 {dateEditing === row.id && <div className="mt-3 flex flex-wrap gap-2 rounded-xl border border-black/5 bg-white p-3"><input type="datetime-local" value={dateValue} onChange={(event) => setDateValue(event.target.value)} className="min-w-0 flex-1 rounded-lg border p-2 text-sm" /><button type="button" onClick={() => void saveDate(row)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">Сохранить дату</button></div>}
+                {scheduleEditing === row.id && <div className="mt-3 rounded-xl border border-black/5 bg-white p-3"><div className="flex flex-wrap gap-2"><input type="datetime-local" value={scheduleValue} onChange={(event) => setScheduleValue(event.target.value)} className="min-w-0 flex-1 rounded-lg border p-2 text-sm"/><button type="button" onClick={() => void saveSchedule(row)} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white">{scheduleValue ? "Запланировать" : "Показывать сейчас"}</button></div><p className="mt-2 text-[10px] opacity-45">Очисти дату и сохрани, чтобы отменить расписание.</p></div>}
                 {editing === row.id && (
                   <div className="mt-3">
                     <StyleEditor

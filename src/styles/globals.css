@@ -179,10 +179,20 @@ button, a, input, textarea, select, summary { -webkit-tap-highlight-color: trans
   inset: 0;
   pointer-events: none;
   z-index: 1;
-  opacity: .16;
+  opacity: .12;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.13'/%3E%3C/svg%3E");
-  mix-blend-mode: multiply;
+  mix-blend-mode: soft-light;
 }
+
+.cinema-vignette {
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 45%, transparent 42%, rgba(0,0,0,.34) 100%),
+    linear-gradient(180deg, rgba(0,0,0,.15), transparent 22%, transparent 78%, rgba(0,0,0,.24));
+}
+
+.reader-shell ::selection { background: rgba(201,160,99,.32); color: #fffaf1; }
+.reader-shell [data-reader-element] { background: #0B0B0D; }
 
 .admin-shell input,
 .admin-shell textarea,

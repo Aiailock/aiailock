@@ -15,6 +15,7 @@ The project is now completed across the planned stages:
 - **7. Hardening:** RLS, private buckets, signed URLs, reader access token, noindex/security headers, PWA shell, reduced-motion support, empty states, lazy media loading and admin-only preview tokens. A final additive migration (`0010_completion_polish.sql`) closes metadata/positioning gaps and adds manual memory photos.
 - **8. Interaction + analytics:** real and bulk deletion, bulk styling, text frames, six tap-to-reveal moment types, additional fonts, browser-friendly admin controls and privacy-preserving reader progress statistics (`0012_interactions_analytics_admin.sql`).
 - **9. Mobile Story Studio:** phone-first composer with drafts/templates, chapters, screenshot albums, GIF scenes, six date designs, remote backgrounds and private reader reactions (`0013_story_studio.sql`).
+- **10. Cinematic + Safety:** dark graphite/gold reader, quote and pause scenes, resume reading, current chapter, scheduled publication, revision restore, integrity checks and downloadable JSON backups (`0014_cinematic_safety.sql`).
 
 The public reader never receives `service_role`, AI metadata internals, prompt versions, import logs or admin controls.
 
@@ -59,6 +60,7 @@ The migration chain is intentionally ordered:
 0011_fix_ambiguous_kind_column.sql
 0012_interactions_analytics_admin.sql
 0013_story_studio.sql
+0014_cinematic_safety.sql
 ```
 
 Supabase's CLI supports linking a project and deploying migrations/functions as code.
@@ -100,7 +102,7 @@ supabase functions deploy reader-reaction
 - `reader-reaction` → public endpoint with its own signed reader-token check
 
 ### Final schema migration
-Run `supabase db push` once from a linked project. The ordered migration chain through `0013_story_studio.sql` is applied automatically.
+Run `supabase db push` once from a linked project. The ordered migration chain through `0014_cinematic_safety.sql` is applied automatically.
 
 ## Required Edge Function secret
 

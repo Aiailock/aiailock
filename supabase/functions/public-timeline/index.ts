@@ -32,6 +32,9 @@ Deno.serve(async (req) => {
     await requireReaderAccess(req, db);
 
     const body = await req.json().catch(() => ({}));
+    const resumeElementId = typeof body.resumeElementId === 'string' && /^[0-9a-f-]{36}$/i.test(body.resumeElementId)
+      ? body.resumeElementId
+      : null;
     const cursor = body.cursor && typeof body.cursor === 'object' ? body.cursor as {
       occurredAt?: string;
       sortTiebreak?: number;
@@ -46,7 +49,18 @@ Deno.serve(async (req) => {
       .order('element_id', { ascending: true })
       .limit(PAGE_SIZE + 1);
 
-    if (cursor?.occurredAt && typeof cursor.sortTiebreak === 'number' && cursor.id) {
+    if (resumeElementId) {
+      const { data: target, error: targetError } = await db
+        .from('reader_timeline_data')
+        .select('occurred_at,sort_tiebreak,element_id')
+        .eq('element_id', resumeElementId)
+        .maybeSingle();
+      if (targetError) throw new Error(targetError.message);
+      if (!target) throw new HttpError(404, 'Сохранённое место больше недоступно. Начни чтение с текущей версии истории.');
+      if (target?.occurred_at) query = query.or(
+        `occurred_at.gt.${target.occurred_at},and(occurred_at.eq.${target.occurred_at},sort_tiebreak.gt.${target.sort_tiebreak}),and(occurred_at.eq.${target.occurred_at},sort_tiebreak.eq.${target.sort_tiebreak},element_id.gte.${target.element_id})`,
+      );
+    } else if (cursor?.occurredAt && typeof cursor.sortTiebreak === 'number' && cursor.id) {
       query = query.or(
         `occurred_at.gt.${cursor.occurredAt},and(occurred_at.eq.${cursor.occurredAt},sort_tiebreak.gt.${cursor.sortTiebreak}),and(occurred_at.eq.${cursor.occurredAt},sort_tiebreak.eq.${cursor.sortTiebreak},element_id.gt.${cursor.id})`,
       );
@@ -68,6 +82,7 @@ Deno.serve(async (req) => {
         sortTiebreak: last.sort_tiebreak,
         id: last.element_id,
       } : null,
+      resumedFrom: resumeElementId,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

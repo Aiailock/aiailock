@@ -75,7 +75,7 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
   }
 
   const previewBg = bgByZone[zone] ?? bgByZone.default;
-  const darkFrame = ['stars', 'neon', 'pixel', 'moonlit'].includes(frame);
+  const lightFrame = ['polaroid', 'washi', 'ticket', 'sepia', 'hearts', 'postcard', 'wax-seal', 'torn', 'phone', 'locket', 'envelope'].includes(frame);
 
   return (
     <div className="rounded-2xl border border-black/10 bg-[#FBF8F5] p-4">
@@ -176,7 +176,7 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
         <div className="relative flex min-h-[200px] items-center justify-center p-6">
           <EffectsLayer decorations={decoration} seed={7} gifUrl={gifUrl || undefined} />
           <div className="w-full">
-          <DateStamp date="3 марта 2024" time={value.hideTime ? null : '21:40'} variant={dateStyle as 'line' | 'centered' | 'ribbon' | 'handwritten' | 'capsule' | 'split'} align={dateAlign as 'left' | 'center' | 'right'} font={dateFont} dark={Boolean(safeRemoteUrl(backgroundImageUrl)) || ['night','burgundy','dusk'].includes(zone)} />
+          <DateStamp date="3 марта 2024" time={value.hideTime ? null : '21:40'} variant={dateStyle as 'line' | 'centered' | 'ribbon' | 'handwritten' | 'capsule' | 'split'} align={dateAlign as 'left' | 'center' | 'right'} font={dateFont} dark />
           {hasMedia ? (
             <Frame frame={frame}>
               <div className="flex aspect-[4/5] w-full items-center justify-center bg-gradient-to-br from-blush to-peach p-4 text-center font-serif text-sm italic text-white">
@@ -184,7 +184,7 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
               </div>
             </Frame>
           ) : (
-            <Frame frame={frame}><p className={`relative z-10 max-w-[280px] rounded-xl p-4 text-lg leading-relaxed ${textAlign === 'center' ? 'text-center' : textAlign === 'right' ? 'text-right' : 'text-left'} ${fontClassByOption[font] ?? 'font-serif'} ${darkFrame || safeRemoteUrl(backgroundImageUrl) ? 'text-[#F4EAF0]' : 'text-ink'}`}>Пример текста сообщения для превью оформления.</p></Frame>
+            <Frame frame={frame}><p className={`relative z-10 max-w-[280px] rounded-xl p-4 text-lg leading-relaxed ${textAlign === 'center' ? 'text-center' : textAlign === 'right' ? 'text-right' : 'text-left'} ${fontClassByOption[font] ?? 'font-serif'} ${lightFrame ? 'text-ink' : 'text-[#F4EFE6]'}`}>Пример текста сообщения для превью оформления.</p></Frame>
           )}
           </div>
         </div>

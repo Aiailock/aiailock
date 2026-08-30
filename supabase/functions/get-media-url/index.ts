@@ -47,8 +47,8 @@ Deno.serve(async (req) => {
       if (memoryError) throw new Error(memoryError.message);
       if (!memory?.photo_storage_path) throw new HttpError(404, 'Фотография воспоминания не найдена.');
       const { data: published, error: publishedError } = await db
-        .from('timeline_elements')
-        .select('id')
+        .from('reader_timeline_data')
+        .select('element_id')
         .eq('memory_id', memoryId)
         .eq('is_published', true)
         .maybeSingle();
@@ -68,8 +68,8 @@ Deno.serve(async (req) => {
       if (error) throw new Error(error.message);
       if (!screenshot?.storage_path) throw new HttpError(404, 'Скриншот не найден.');
       const { data: published, error: publishedError } = await db
-        .from('timeline_elements')
-        .select('id')
+        .from('reader_timeline_data')
+        .select('element_id')
         .eq('screenshot_id', screenshotId)
         .eq('is_published', true)
         .maybeSingle();
@@ -89,8 +89,8 @@ Deno.serve(async (req) => {
     if (!media || media.status !== 'stored' || !media.storage_path) throw new HttpError(404, 'Медиафайл не найден или ещё не сохранён.');
 
     const { data: published, error: publishedError } = await db
-      .from('timeline_elements')
-      .select('id')
+      .from('reader_timeline_data')
+      .select('element_id')
       .eq('media_id', media.id)
       .eq('is_published', true)
       .maybeSingle();

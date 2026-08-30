@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
       if (visitorError) throw new Error(visitorError.message);
       const { error: visitError } = await db.from('reader_visits').upsert({ id: visitId, visitor_id: visitorId, opened_at: now, last_seen_at: now }, { onConflict: 'id' });
       if (visitError) throw new Error(visitError.message);
-      const { count, error: countError } = await db.from('timeline_elements').select('id', { count: 'exact', head: true }).eq('is_published', true);
+      const { count, error: countError } = await db.from('reader_timeline_data').select('element_id', { count: 'exact', head: true });
       if (countError) throw new Error(countError.message);
       return json({ ok: true, total: count ?? 0 });
     }
@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
     if (!elementId) throw new HttpError(400, 'Некорректный элемент истории.');
     const position = boundedInt(body.position, 1, 10000000);
     const progress = action === 'complete' ? 100 : boundedInt(body.progress, 0, 100);
-    const { data: element, error: elementError } = await db.from('timeline_elements').select('occurred_at,type').eq('id', elementId).maybeSingle();
+    const { data: element, error: elementError } = await db.from('reader_timeline_data').select('occurred_at,type').eq('element_id', elementId).maybeSingle();
     if (elementError) throw new Error(elementError.message);
     if (!element) throw new HttpError(404, 'Элемент истории не найден.');
 

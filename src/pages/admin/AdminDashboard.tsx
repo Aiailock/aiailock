@@ -2749,6 +2749,10 @@ function SettingsPanel() {
   const [coverSubtitle, setCoverSubtitle] = useState("история впереди");
   const [closingMessage, setClosingMessage] = useState("история продолжается");
   const [coverBackgroundUrl, setCoverBackgroundUrl] = useState("");
+  const [loaderTitle, setLoaderTitle] = useState("Моя история грузится");
+  const [loaderSubtitle, setLoaderSubtitle] = useState("Немного подожди — я бережно собираю всё по страницам.");
+  const [loaderStyle, setLoaderStyle] = useState("hearts");
+  const [motionMode, setMotionMode] = useState("auto");
   useEffect(() => {
     supabase
       .from("history_settings")
@@ -2761,10 +2765,8 @@ function SettingsPanel() {
         if (data) {
           setTitle(data.reader_title);
           setName(data.contact_display_name ?? "");
-          const t = { ...themeDefaults, ...(data.theme ?? {}) } as Record<
-            string,
-            string
-          >;
+          const savedTheme = (data.theme ?? {}) as Record<string, unknown>;
+          const t = Object.fromEntries(Object.entries(themeDefaults).map(([key, fallback]) => [key, typeof savedTheme[key] === "string" ? savedTheme[key] : fallback])) as Record<string, string>;
           setColors(t);
           setAdvanced(JSON.stringify(data.theme ?? {}, null, 2));
           setPasswordEnabled(Boolean(data.reader_requires_password));
@@ -2788,6 +2790,10 @@ function SettingsPanel() {
           if (typeof theme.coverSubtitle === "string") setCoverSubtitle(theme.coverSubtitle);
           if (typeof theme.closingMessage === "string") setClosingMessage(theme.closingMessage);
           if (typeof theme.coverBackgroundUrl === "string") setCoverBackgroundUrl(theme.coverBackgroundUrl);
+          if (typeof theme.loaderTitle === "string") setLoaderTitle(theme.loaderTitle);
+          if (typeof theme.loaderSubtitle === "string") setLoaderSubtitle(theme.loaderSubtitle);
+          if (["hearts", "sparkles", "minimal"].includes(String(theme.loaderStyle))) setLoaderStyle(String(theme.loaderStyle));
+          if (["auto", "full", "lite"].includes(String(theme.motionMode))) setMotionMode(String(theme.motionMode));
         }
       });
   }, []);
@@ -2812,6 +2818,10 @@ function SettingsPanel() {
         coverSubtitle: coverSubtitle.trim() || "история впереди",
         closingMessage: closingMessage.trim() || "история продолжается",
         coverBackgroundUrl: coverBackgroundUrl.trim(),
+        loaderTitle: loaderTitle.trim() || "Моя история грузится",
+        loaderSubtitle: loaderSubtitle.trim() || "Немного подожди — я бережно собираю всё по страницам.",
+        loaderStyle,
+        motionMode,
       };
       const { error } = await supabase.rpc("update_history_settings", {
         p_reader_title: title,
@@ -2912,6 +2922,17 @@ function SettingsPanel() {
         <input value={closingMessage} onChange={(event) => setClosingMessage(event.target.value)} placeholder="история продолжается" className="mt-3 w-full rounded-xl border p-3" />
         <input value={coverBackgroundUrl} onChange={(event) => setCoverBackgroundUrl(event.target.value)} inputMode="url" placeholder="Ссылка на картинку для обложки: https://…" className="mt-3 w-full rounded-xl border p-3" />
         {coverBackgroundUrl && !safeRemoteUrl(coverBackgroundUrl) && <p className="mt-1 text-xs text-red-700">Нужна полная ссылка http:// или https://</p>}
+      </div>
+      <div className="mt-5 rounded-2xl border border-black/5 bg-[#FBF8F5] p-4">
+        <div className="text-sm font-medium text-burgundy">Загрузка истории</div>
+        <p className="mt-1 text-xs opacity-45">Текст и вид экрана, который она увидит, пока готовятся первые страницы.</p>
+        <input value={loaderTitle} onChange={(event) => setLoaderTitle(event.target.value)} placeholder="Моя история грузится" className="mt-3 w-full rounded-xl border p-3" />
+        <textarea value={loaderSubtitle} onChange={(event) => setLoaderSubtitle(event.target.value)} maxLength={180} placeholder="Немного подожди…" className="mt-3 min-h-20 w-full rounded-xl border p-3" />
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-xs">Анимация<select value={loaderStyle} onChange={(event) => setLoaderStyle(event.target.value)} className="mt-2 w-full rounded-xl border p-3 text-sm"><option value="hearts">Три сердечка</option><option value="sparkles">Искры</option><option value="minimal">Тонкое кольцо</option></select></label>
+          <label className="text-xs">Плавность на телефоне<select value={motionMode} onChange={(event) => setMotionMode(event.target.value)} className="mt-2 w-full rounded-xl border p-3 text-sm"><option value="auto">Автоматически — рекомендуется</option><option value="full">Все эффекты</option><option value="lite">Облегчённый режим</option></select></label>
+        </div>
+        <p className="mt-2 text-[11px] opacity-45">Автоматический режим сам убирает тяжёлые эффекты на слабом телефоне или при экономии трафика.</p>
       </div>
       <div className="mt-5">
         <div className="text-sm">Палитра reader</div>

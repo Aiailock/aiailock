@@ -10,7 +10,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-reader-access-token',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-const ALLOWED = new Set(['❤', '🥹', '😊', '✨', '😂', '💔']);
+const ALLOWED = new Set(['❤', '🥹', '😊', '✨', '😂', '💔', '💭']);
 
 class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -68,19 +68,21 @@ Deno.serve(async (req) => {
     const visitorId = uuid(body.visitorId);
     const elementId = uuid(body.elementId);
     const emoji = typeof body.emoji === 'string' ? body.emoji : '';
+    const note = typeof body.note === 'string' ? body.note.trim() : '';
     if (!visitorId || !elementId) throw new HttpError(400, 'Некорректная реакция.');
     if (!ALLOWED.has(emoji)) throw new HttpError(400, 'Эта реакция не поддерживается.');
+    if (note.length > 600) throw new HttpError(400, 'Мнение должно быть короче 600 символов.');
 
     const db = serviceClient();
     const { data: published, error: publishedError } = await db.from('reader_timeline_data').select('element_id').eq('element_id', elementId).maybeSingle();
     if (publishedError) throw new Error(publishedError.message);
     if (!published) throw new HttpError(404, 'Элемент истории не найден.');
 
-    const { error } = await db.from('reader_reactions').upsert({ visitor_id: visitorId, element_id: elementId, emoji, updated_at: new Date().toISOString() }, { onConflict: 'visitor_id,element_id' });
+    const { error } = await db.from('reader_reactions').upsert({ visitor_id: visitorId, element_id: elementId, emoji, note: note || null, updated_at: new Date().toISOString() }, { onConflict: 'visitor_id,element_id' });
     if (error) throw new Error(error.message);
     const { count, error: countError } = await db.from('reader_reactions').select('*', { count: 'exact', head: true }).eq('element_id', elementId).eq('emoji', emoji);
     if (countError) throw new Error(countError.message);
-    return json({ ok: true, emoji, count: count ?? 1 });
+    return json({ ok: true, emoji, note, count: count ?? 1 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return json({ error: message }, error instanceof HttpError ? error.status : 500);

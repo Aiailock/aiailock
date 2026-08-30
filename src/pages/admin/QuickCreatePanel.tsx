@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { BookHeart, Check, ImagePlus, Layers3, Save, Sparkles, WandSparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookHeart, Check, ImagePlus, Layers3, Save, Sparkles, Trash2, WandSparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import StyleEditor, { type StyleValue } from './StyleEditor';
 import { INTERACTION_OPTIONS } from '@/lib/styleOptions';
@@ -67,12 +67,34 @@ async function upload(file: File, folder: string) {
   return path;
 }
 
+async function uploadBatch(files: File[], folder: string): Promise<string[]> {
+  const paths = new Array<string>(files.length);
+  let next = 0;
+  async function worker() {
+    while (next < files.length) {
+      const index = next++;
+      paths[index] = await upload(files[index], folder);
+    }
+  }
+  try {
+    await Promise.all(Array.from({ length: Math.min(3, files.length) }, () => worker()));
+    return paths;
+  } catch (error) {
+    const uploaded = paths.filter(Boolean);
+    if (uploaded.length > 0) await supabase.storage.from('screenshots').remove(uploaded);
+    throw error;
+  }
+}
+
 export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCreated: () => void; onOpenTimeline: () => void }) {
   const [draft, setDraft] = useState<Draft>(readDraft);
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const selectedKind = useMemo(() => KINDS.find((kind) => kind.id === draft.kind) ?? KINDS[0], [draft.kind]);
+  const previews = useMemo(() => files.map((file) => ({ file, url: URL.createObjectURL(file) })), [files]);
+
+  useEffect(() => () => previews.forEach((preview) => URL.revokeObjectURL(preview.url)), [previews]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)), 250);
@@ -81,6 +103,24 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
 
   function patch(next: Partial<Draft>) { setDraft((current) => ({ ...current, ...next })); setMessage(''); }
   function reset() { const next = emptyDraft(); setDraft(next); setFiles([]); localStorage.removeItem(DRAFT_KEY); setMessage('Новый чистый черновик готов.'); }
+  function selectFiles(incoming: File[]) {
+    const valid = incoming.filter((file) => file.type.startsWith('image/') && file.size <= 20 * 1024 * 1024);
+    if (valid.length !== incoming.length) setMessage('Можно добавлять изображения до 20 МБ каждое. Неподходящие файлы пропущены.');
+    setFiles((current) => {
+      const source = draft.kind === 'album' ? [...current, ...valid] : valid.slice(0, 1);
+      const unique = source.filter((file, index, all) => all.findIndex((candidate) => candidate.name === file.name && candidate.size === file.size && candidate.lastModified === file.lastModified) === index);
+      return unique.slice(0, draft.kind === 'album' ? 12 : 1);
+    });
+  }
+  function moveFile(index: number, direction: -1 | 1) {
+    setFiles((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -131,11 +171,11 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         if (files.length === 0) throw new Error('Выбери один или несколько скриншотов.');
         if (files.length > 12) throw new Error('В одном альбоме можно максимум 12 изображений.');
         const collectionId = files.length > 1 ? crypto.randomUUID() : null;
-        for (let index = 0; index < files.length; index += 1) {
-          const id = crypto.randomUUID();
-          const storagePath = await upload(files[index], `albums/${collectionId ?? id}`);
-          const { error } = await supabase.from('screenshots').insert({
-            id, storage_path: storagePath,
+        const albumFolder = `albums/${collectionId ?? crypto.randomUUID()}`;
+        const storagePaths = await uploadBatch(files, albumFolder);
+        const ids = files.map(() => crypto.randomUUID());
+        const albumRows = storagePaths.map((storagePath, index) => ({
+            id: ids[index], storage_path: storagePath,
             title: index === 0 ? draft.title.trim() || null : null,
             description: null,
             caption: index === 0 ? draft.body.trim() || null : null,
@@ -146,11 +186,14 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
             collection_layout: draft.albumLayout,
             reaction_emoji: index === 0 ? draft.reactionEmoji || null : null,
             reaction_text: index === 0 ? draft.reactionText.trim() || null : null,
-          });
-          if (error) throw error;
-          const { error: visibilityError } = await supabase.from('timeline_elements').update(visibility).eq('screenshot_id', id);
-          if (visibilityError) throw visibilityError;
+          }));
+        const { error } = await supabase.from('screenshots').insert(albumRows);
+        if (error) {
+          await supabase.storage.from('screenshots').remove(storagePaths);
+          throw error;
         }
+        const { error: visibilityError } = await supabase.from('timeline_elements').update(visibility).in('screenshot_id', ids);
+        if (visibilityError) throw visibilityError;
       } else {
         const isGif = draft.kind === 'gif';
         if (!isGif && !draft.body.trim()) throw new Error('Напиши текст момента.');
@@ -204,7 +247,10 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         <textarea value={draft.body} onChange={(event) => patch({ body: event.target.value })} placeholder={draft.kind === 'chapter' ? 'Короткая фраза под названием' : draft.kind === 'quote' ? 'Та самая фраза…' : draft.kind === 'pause' ? 'Несколько тихих слов — или оставь пустым' : draft.kind === 'interactive' ? 'Что откроется после нажатия?' : draft.kind === 'album' ? 'Общая подпись к альбому' : 'Текст страницы'} className="mt-3 min-h-36 w-full rounded-xl border p-3" />
         <input type="datetime-local" value={draft.occurredAt} onChange={(event) => patch({ occurredAt: event.target.value })} className="mt-3 w-full rounded-xl border p-3" />
 
-        {(draft.kind === 'memory' || draft.kind === 'special' || draft.kind === 'gif' || draft.kind === 'interactive' || draft.kind === 'album') && <label className="mt-3 block rounded-xl border border-dashed border-burgundy/15 bg-[#FBF8F5] p-3 text-sm"><span className="flex items-center gap-2"><ImagePlus size={16} />{draft.kind === 'album' ? 'Скриншоты (можно выбрать сразу несколько)' : draft.kind === 'gif' ? 'GIF-файл' : 'Фото или GIF (необязательно)'}</span><input type="file" multiple={draft.kind === 'album'} accept={draft.kind === 'gif' ? 'image/gif,.gif' : 'image/*,.gif'} onChange={(event) => setFiles(Array.from(event.target.files ?? []))} className="mt-2 block w-full text-xs" />{files.length > 0 && <span className="mt-2 block text-[11px] text-burgundy/60">Выбрано: {files.length}</span>}</label>}
+        {(draft.kind === 'memory' || draft.kind === 'special' || draft.kind === 'gif' || draft.kind === 'interactive' || draft.kind === 'album') && <div className="mt-3 rounded-xl border border-dashed border-burgundy/15 bg-[#FBF8F5] p-3 text-sm">
+          <label className="block cursor-pointer"><span className="flex items-center gap-2"><ImagePlus size={16} />{draft.kind === 'album' ? 'Скриншоты — выбирай сразу несколько или добавляй ещё' : draft.kind === 'gif' ? 'GIF-файл' : 'Фото или GIF (необязательно)'}</span><input type="file" multiple={draft.kind === 'album'} accept={draft.kind === 'gif' ? 'image/gif,.gif' : 'image/*,.gif'} onChange={(event) => { selectFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ''; }} className="mt-2 block w-full text-xs" /></label>
+          {files.length > 0 && <><div className="mt-3 flex items-center justify-between text-[11px] text-burgundy/60"><span>Выбрано: {files.length}{draft.kind === 'album' ? ' из 12' : ''}</span><span>{(files.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(1)} МБ</span></div><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{previews.map((preview, index) => <div key={`${preview.file.name}-${preview.file.lastModified}`} className="min-w-0 overflow-hidden rounded-xl border border-burgundy/10 bg-white/75"><div className="aspect-[4/5] overflow-hidden bg-black/5"><img src={preview.url} alt="" className="h-full w-full object-cover" /></div><div className="p-2"><div className="truncate text-[10px]" title={preview.file.name}>{index + 1}. {preview.file.name}</div><div className="mt-2 flex items-center justify-between"><div className="flex gap-1">{draft.kind === 'album' && <><button type="button" aria-label="Передвинуть влево" disabled={index === 0} onClick={() => moveFile(index, -1)} className="rounded-lg border p-1.5 disabled:opacity-25"><ArrowLeft size={12}/></button><button type="button" aria-label="Передвинуть вправо" disabled={index === files.length - 1} onClick={() => moveFile(index, 1)} className="rounded-lg border p-1.5 disabled:opacity-25"><ArrowRight size={12}/></button></>}</div><button type="button" aria-label="Удалить файл" onClick={() => setFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="rounded-lg border border-red-900/10 p-1.5 text-red-700"><Trash2 size={12}/></button></div></div></div>)}</div></>}
+        </div>}
 
         {draft.kind === 'gif' && <label className="mt-3 block text-sm">Или прямая ссылка на GIF<input value={draft.gifUrl} inputMode="url" onChange={(event) => patch({ gifUrl: event.target.value })} placeholder="https://…/animation.gif" className="mt-2 w-full rounded-xl border p-3" /></label>}
         {draft.kind === 'interactive' && <div className="mt-3 space-y-3"><label className="block text-sm">Как открывается<select value={draft.interaction} onChange={(event) => patch({ interaction: event.target.value })} className="mt-2 w-full rounded-xl border p-3">{INTERACTION_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.hint}</option>)}</select></label>{['question','choice','scale'].includes(draft.interaction) && <div className="rounded-2xl border border-burgundy/10 bg-[#FBF8F5] p-3"><div className="text-xs font-medium text-burgundy">{draft.interaction === 'scale' ? 'Подписи краёв шкалы' : 'Два варианта ответа'}</div><div className="mt-2 grid grid-cols-2 gap-2"><input value={draft.optionA} onChange={(event) => patch({ optionA: event.target.value })} placeholder={draft.interaction === 'scale' ? 'Немного' : 'Первый ответ'} className="min-w-0 rounded-xl border p-3 text-sm"/><input value={draft.optionB} onChange={(event) => patch({ optionB: event.target.value })} placeholder={draft.interaction === 'scale' ? 'Бесконечно' : 'Второй ответ'} className="min-w-0 rounded-xl border p-3 text-sm"/></div>{draft.interaction !== 'scale' && <div className="mt-2 grid gap-2"><input value={draft.resultA} onChange={(event) => patch({ resultA: event.target.value })} placeholder="Ответ после первого выбора (необязательно)" className="rounded-xl border p-3 text-sm"/><input value={draft.resultB} onChange={(event) => patch({ resultB: event.target.value })} placeholder="Ответ после второго выбора (необязательно)" className="rounded-xl border p-3 text-sm"/></div>}</div>}</div>}

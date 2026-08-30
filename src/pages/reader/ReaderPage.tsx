@@ -1,11 +1,33 @@
 import { useEffect, useState } from 'react';
-import { ArrowDown, Heart, LockKeyhole } from 'lucide-react';
+import { ArrowDown, Heart, LockKeyhole, Sparkles } from 'lucide-react';
 import TimelineStory from '@/components/reader/TimelineStory';
 import { fetchReaderSettings, requestReaderAccess } from '@/lib/readerApi';
-import { ReaderSettingsContext, readDisplaySettingsFromTheme, type ReaderDisplaySettings } from '@/lib/readerSettingsContext';
+import { ReaderSettingsContext, prefersLiteReaderMotion, readDisplaySettingsFromTheme, type ReaderDisplaySettings } from '@/lib/readerSettingsContext';
 import { safeRemoteUrl } from '@/lib/safeUrl';
 
 const TOKEN_KEY = 'for-you-reader-token';
+const DISPLAY_SETTINGS_KEY = 'for-you-display-settings-v1';
+
+function cachedDisplaySettings(): ReaderDisplaySettings {
+  try {
+    return readDisplaySettingsFromTheme(JSON.parse(localStorage.getItem(DISPLAY_SETTINGS_KEY) ?? 'null') as Record<string, unknown> | null);
+  } catch {
+    return readDisplaySettingsFromTheme(null);
+  }
+}
+
+function PageLoader({ settings }: { settings: ReaderDisplaySettings }) {
+  return <div className="flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#09090B] px-7 text-center text-[#F4EFE6]">
+    <div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(173,91,126,.2),transparent_34%)]"/>
+    <div className="relative w-full max-w-sm">
+      {settings.loaderStyle === 'hearts' ? <div className="story-heart-loader mx-auto" aria-hidden="true"><Heart/><Heart/><Heart/></div>
+        : settings.loaderStyle === 'minimal' ? <div className="story-loader-ring mx-auto" aria-hidden="true" />
+        : <div className="mx-auto flex h-16 w-16 animate-pulse items-center justify-center rounded-full border border-gold/25 text-gold" aria-hidden="true"><Sparkles size={22}/></div>}
+      <div className="mt-7 font-serif text-[34px] leading-tight">{settings.loaderTitle}</div>
+      <div className="mx-auto mt-3 max-w-[280px] text-sm leading-relaxed text-white/45">{settings.loaderSubtitle}</div>
+    </div>
+  </div>;
+}
 
 function tokenLooksFresh(token: string): boolean {
   try {
@@ -28,7 +50,7 @@ export default function ReaderPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [checkingPassword, setCheckingPassword] = useState(false);
-  const [displaySettings, setDisplaySettings] = useState<ReaderDisplaySettings>(() => readDisplaySettingsFromTheme(null));
+  const [displaySettings, setDisplaySettings] = useState<ReaderDisplaySettings>(cachedDisplaySettings);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +68,7 @@ export default function ReaderPage() {
             if (typeof value === 'string') root.style.setProperty(variable, value);
           }
         }
+        localStorage.setItem(DISPLAY_SETTINGS_KEY, JSON.stringify(settings.theme ?? {}));
         setDisplaySettings(readDisplaySettingsFromTheme(settings.theme ?? null));
         const saved = localStorage.getItem(TOKEN_KEY);
         if (saved && tokenLooksFresh(saved)) {
@@ -67,6 +90,12 @@ export default function ReaderPage() {
     return () => { cancelled = true; };
   }, [isPreview]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.readerMotion = prefersLiteReaderMotion(displaySettings.motionMode) ? 'lite' : 'full';
+    return () => { delete root.dataset.readerMotion; };
+  }, [displaySettings.motionMode]);
+
   async function unlock() {
     setCheckingPassword(true);
     setError(null);
@@ -82,7 +111,7 @@ export default function ReaderPage() {
     }
   }
 
-  if (loading) return <div className="flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[#09090B] px-7 text-center text-[#F4EFE6]"><div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(173,91,126,.2),transparent_34%)]"/><div className="relative"><div className="mx-auto flex h-14 w-14 animate-pulse items-center justify-center rounded-full border border-gold/25 text-gold"><Heart size={20} strokeWidth={1.2}/></div><div className="mt-6 font-serif text-3xl">Открываю историю</div><div className="mt-3 text-[10px] uppercase tracking-[3px] text-white/30">первая страница уже близко</div></div></div>;
+  if (loading) return <PageLoader settings={displaySettings} />;
 
   if (requiresPassword && !token) {
     return (

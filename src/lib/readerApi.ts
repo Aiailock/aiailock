@@ -151,6 +151,7 @@ export async function recordReaderReaction(input: {
   visitorId: string;
   elementId: string;
   emoji: string;
+  note?: string;
 }, token: string): Promise<{ emoji: string; count: number }> {
   const { data, error } = await supabase.functions.invoke('reader-reaction', {
     body: input,
@@ -207,13 +208,21 @@ export async function fetchMediaUrl(input: ReaderMediaInput, token: string): Pro
 function warmImage(url: string): Promise<void> {
   return new Promise((resolve) => {
     const image = new Image();
-    const done = () => resolve();
-    const timeout = window.setTimeout(done, 15000);
-    image.onload = () => { window.clearTimeout(timeout); done(); };
-    image.onerror = () => { window.clearTimeout(timeout); done(); };
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      image.onload = null;
+      image.onerror = null;
+      resolve();
+    };
+    const timeout = window.setTimeout(done, 5500);
+    image.onload = done;
+    image.onerror = done;
     image.decoding = 'async';
     image.src = url;
-    if (image.complete) { window.clearTimeout(timeout); done(); }
+    if (image.complete) done();
   });
 }
 
@@ -258,5 +267,5 @@ export async function preloadTimelineMedia(
     }
   }
 
-  await Promise.all(Array.from({ length: Math.min(4, Math.max(1, total)) }, () => worker()));
+  await Promise.all(Array.from({ length: Math.min(2, Math.max(1, total)) }, () => worker()));
 }

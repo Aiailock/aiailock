@@ -1,7 +1,7 @@
-import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
-import { useRef } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
+import { memo } from 'react';
 import type { PublicTimelineRow } from '@/lib/readerApi';
-import { useReaderSettings, type DateStyleId, type TimeFormatId } from '@/lib/readerSettingsContext';
+import { prefersLiteReaderMotion, useReaderSettings, type DateStyleId, type TimeFormatId } from '@/lib/readerSettingsContext';
 import { safeRemoteUrl } from '@/lib/safeUrl';
 import ReaderMedia from './ReaderMedia';
 import EffectsLayer from './EffectsLayer';
@@ -191,24 +191,22 @@ function AnimatedWords({ text, className, reduced }: { text: string; className: 
   })}</p>;
 }
 
-export default function StoryElement({ row, token, galleryRows }: { row: PublicTimelineRow; token: string; galleryRows?: PublicTimelineRow[] }) {
+function StoryElement({ row, token, galleryRows }: { row: PublicTimelineRow; token: string; galleryRows?: PublicTimelineRow[] }) {
   const reducedMotion = useReducedMotion();
   const settings = useReaderSettings();
   const { specialMomentLabel, timeFormat, readerFont } = settings;
+  const liteMotion = Boolean(reducedMotion) || prefersLiteReaderMotion(settings.motionMode);
   const zone = zoneOf(row);
-  const ref = useRef<HTMLElement | null>(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ['start end', 'end start'] });
-  const parallaxY = useTransform(scrollYProgress, [0, 1], reducedMotion ? [0, 0] : [-8, 8]);
 
   if (row.type === 'quote') {
     const quote = typeof row.metadata?.quote === 'string' ? row.metadata.quote : '';
     const author = typeof row.metadata?.author === 'string' ? row.metadata.author : '';
-    return <MotionWrap reduced={reducedMotion}><section className="relative mx-auto flex min-h-[58vh] max-w-page items-center justify-center overflow-hidden bg-[#0B0B0D] px-7 py-24 text-center text-[#F4EFE6]"><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative max-w-[390px]"><div aria-hidden className="font-serif text-7xl leading-none text-gold/35">“</div><blockquote className="-mt-4 whitespace-pre-wrap font-serif text-[29px] italic leading-[1.55] sm:text-[34px]">{quote || 'Наша фраза'}</blockquote>{author && <footer className="mt-8 text-[11px] uppercase tracking-[3px] text-gold/70">{author}</footer>}<div className="mx-auto mt-9 h-px w-14 bg-gold/35"/></div></section></MotionWrap>;
+    return <MotionWrap reduced={liteMotion}><section className="relative mx-auto flex min-h-[58vh] max-w-page flex-col items-center justify-center overflow-hidden bg-[#0B0B0D] px-7 py-24 text-center text-[#F4EFE6]"><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative max-w-[390px]"><div aria-hidden className="font-serif text-7xl leading-none text-gold/35">“</div><blockquote className="-mt-4 whitespace-pre-wrap font-serif text-[29px] italic leading-[1.55] sm:text-[34px]">{quote || 'Наша фраза'}</blockquote>{author && <footer className="mt-8 text-[11px] uppercase tracking-[3px] text-gold/70">{author}</footer>}<div className="mx-auto mt-9 h-px w-14 bg-gold/35"/></div><ReaderReaction elementId={row.element_id} token={token} dark /></section></MotionWrap>;
   }
 
   if (row.type === 'pause') {
     const pauseText = typeof row.metadata?.text === 'string' ? row.metadata.text : '';
-    return <MotionWrap reduced={reducedMotion}><section className="relative mx-auto flex min-h-[52vh] max-w-page items-center justify-center overflow-hidden bg-[#0D0C0E] px-7 py-24 text-center text-[#F4EFE6]"><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative max-w-xs"><div className="mx-auto h-px w-16 bg-gold/35"/>{pauseText && <p className="mt-8 whitespace-pre-wrap font-script text-2xl leading-relaxed text-[#F4EFE6]/72">{pauseText}</p>}<div aria-hidden className="mt-8 text-lg text-gold/55">♡</div></div></section></MotionWrap>;
+    return <MotionWrap reduced={liteMotion}><section className="relative mx-auto flex min-h-[52vh] max-w-page flex-col items-center justify-center overflow-hidden bg-[#0D0C0E] px-7 py-24 text-center text-[#F4EFE6]"><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative max-w-xs"><div className="mx-auto h-px w-16 bg-gold/35"/>{pauseText && <p className="mt-8 whitespace-pre-wrap font-script text-2xl leading-relaxed text-[#F4EFE6]/72">{pauseText}</p>}<div aria-hidden className="mt-8 text-lg text-gold/55">♡</div></div><ReaderReaction elementId={row.element_id} token={token} dark /></section></MotionWrap>;
   }
 
   if (row.type === 'chapter') {
@@ -216,14 +214,14 @@ export default function StoryElement({ row, token, galleryRows }: { row: PublicT
     const chapterSubtitle = typeof row.metadata?.subtitle === 'string' ? row.metadata.subtitle : '';
     const chapterNumber = typeof row.metadata?.number === 'string' || typeof row.metadata?.number === 'number' ? String(row.metadata.number) : '';
     const chapterBackground = safeRemoteUrl(row.style?.backgroundImageUrl);
-    return <MotionWrap reduced={reducedMotion}><section id={`chapter-${row.element_id}`} className="relative mx-auto flex min-h-[76vh] max-w-page items-center justify-center overflow-hidden px-6 py-20 text-center text-[#F4EFE6]" style={chapterBackground ? { backgroundImage: `linear-gradient(rgba(8,7,9,.48),rgba(8,7,9,.78)),url(${JSON.stringify(chapterBackground)})`, backgroundSize: 'cover', backgroundPosition: String(row.style?.backgroundPosition ?? 'center') } : { background: bgByZone[zone] ?? bgByZone.default }}><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative z-10 max-w-[370px]"><div className="text-[10px] uppercase tracking-[4px] text-gold/65">{chapterNumber ? `глава ${chapterNumber}` : 'новая глава'}</div><div className="mx-auto my-8 h-px w-16 bg-gold/45"/><h2 className="overflow-wrap-anywhere font-serif text-[48px] leading-[1.04] text-[#F4EFE6] drop-shadow-lg">{chapterTitle}</h2>{chapterSubtitle && <p className="mt-7 font-script text-2xl leading-relaxed text-[#F4EFE6]/70">{chapterSubtitle}</p>}<div className="mx-auto mt-11 text-2xl text-gold/65">♡</div></div></section></MotionWrap>;
+    return <MotionWrap reduced={liteMotion}><section id={`chapter-${row.element_id}`} className="relative mx-auto flex min-h-[76vh] max-w-page flex-col items-center justify-center overflow-hidden px-6 py-20 text-center text-[#F4EFE6]" style={chapterBackground ? { backgroundImage: `linear-gradient(rgba(8,7,9,.48),rgba(8,7,9,.78)),url(${JSON.stringify(chapterBackground)})`, backgroundSize: 'cover', backgroundPosition: String(row.style?.backgroundPosition ?? 'center') } : { background: bgByZone[zone] ?? bgByZone.default }}><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative z-10 max-w-[370px]"><div className="text-[10px] uppercase tracking-[4px] text-gold/65">{chapterNumber ? `глава ${chapterNumber}` : 'новая глава'}</div><div className="mx-auto my-8 h-px w-16 bg-gold/45"/><h2 className="overflow-wrap-anywhere font-serif text-[48px] leading-[1.04] text-[#F4EFE6] drop-shadow-lg">{chapterTitle}</h2>{chapterSubtitle && <p className="mt-7 font-script text-2xl leading-relaxed text-[#F4EFE6]/70">{chapterSubtitle}</p>}<div className="mx-auto mt-11 text-2xl text-gold/65">♡</div></div><div className="relative z-10 w-full"><ReaderReaction elementId={row.element_id} token={token} dark /></div></section></MotionWrap>;
   }
 
-  if (row.type === 'year_break') return <MotionWrap reduced={reducedMotion}><section className="mx-auto flex min-h-[64vh] max-w-page items-center justify-center bg-[#0B0B0D] px-6 text-center text-[#F4EFE6]"><div><div className="mx-auto mb-7 h-px w-16 bg-gold/55"/><div className="font-serif text-[72px] font-medium leading-none text-[#F4EFE6]">{year(row.occurred_at)}</div><div className="mx-auto mt-6 h-px w-28 bg-gold/30"/><p className="mt-5 font-script text-2xl text-gold/70">ещё одна глава</p></div></section></MotionWrap>;
+  if (row.type === 'year_break') return <MotionWrap reduced={liteMotion}><section className="mx-auto flex min-h-[64vh] max-w-page flex-col items-center justify-center bg-[#0B0B0D] px-6 py-20 text-center text-[#F4EFE6]"><div><div className="mx-auto mb-7 h-px w-16 bg-gold/55"/><div className="font-serif text-[72px] font-medium leading-none text-[#F4EFE6]">{year(row.occurred_at)}</div><div className="mx-auto mt-6 h-px w-28 bg-gold/30"/><p className="mt-5 font-script text-2xl text-gold/70">ещё одна глава</p></div><ReaderReaction elementId={row.element_id} token={token} dark /></section></MotionWrap>;
 
   if (row.type === 'on_this_day') {
     const previous = typeof row.metadata?.previous_text === 'string' ? row.metadata.previous_text : null;
-    return <MotionWrap reduced={reducedMotion}><section className="mx-auto flex min-h-[42vh] max-w-page items-center justify-center bg-[#111012] px-6"><div className="w-full border-l border-gold/45 px-6 py-10 text-[#F4EFE6]"><div className="font-script text-2xl text-gold">в этот день</div><div className="mt-2 font-serif text-2xl text-[#F4EFE6]">{wallClockDate(row.occurred_at)}</div>{previous && <p className="mt-6 whitespace-pre-wrap font-serif text-xl italic leading-relaxed text-[#F4EFE6]/75">«{previous}»</p>}</div></section></MotionWrap>;
+    return <MotionWrap reduced={liteMotion}><section className="mx-auto flex min-h-[42vh] max-w-page flex-col items-center justify-center bg-[#111012] px-6 py-16"><div className="w-full border-l border-gold/45 px-6 py-10 text-[#F4EFE6]"><div className="font-script text-2xl text-gold">в этот день</div><div className="mt-2 font-serif text-2xl text-[#F4EFE6]">{wallClockDate(row.occurred_at)}</div>{previous && <p className="mt-6 whitespace-pre-wrap font-serif text-xl italic leading-relaxed text-[#F4EFE6]/75">«{previous}»</p>}</div><div className="w-full"><ReaderReaction elementId={row.element_id} token={token} dark /></div></section></MotionWrap>;
   }
 
   // BUGFIX: memory/special-moment text (`memory_body`, typed in Admin →
@@ -286,8 +284,8 @@ export default function StoryElement({ row, token, galleryRows }: { row: PublicT
     </div>
   ) : (
     <div className={`story-copy min-w-0 ${isSpecial ? 'mx-auto max-w-[390px] text-center' : textAlign}`}>
-      {revealAnimation === 'words' && text.length <= 360
-        ? <AnimatedWords reduced={reducedMotion} text={text} className={`min-w-0 whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${textColorClass} ${isSpecial ? 'text-[27px] italic' : ''}`} />
+      {revealAnimation === 'words' && !liteMotion && text.length <= 280 && text.split(/\s+/).length <= 46
+        ? <AnimatedWords reduced={liteMotion} text={text} className={`min-w-0 whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${textColorClass} ${isSpecial ? 'text-[27px] italic' : ''}`} />
         : <p className={`min-w-0 whitespace-pre-wrap ${fontOverride ?? 'font-serif'} text-[23px] leading-[1.58] sm:text-[25px] ${textColorClass} ${isSpecial ? 'text-[27px] italic' : ''}`}>{text}</p>}
       {row.display_text && row.original_text && row.display_text !== row.original_text && <details className="mt-5 text-[11px] opacity-45"><summary className="cursor-pointer">оригинал</summary><p className="mt-2 whitespace-pre-wrap font-sans">{row.original_text}</p></details>}
       {textReaction && <div className="mt-4 text-sm opacity-50">{textReaction}</div>}
@@ -302,28 +300,30 @@ export default function StoryElement({ row, token, galleryRows }: { row: PublicT
     : textNode;
 
   const content = (
-    <article ref={ref} data-story-zone={zone} data-has-background={backgroundImage ? 'true' : 'false'} style={{ background: bgByZone[zone] ?? bgByZone.default, ...(backgroundImage ? { backgroundImage: `url(${JSON.stringify(backgroundImage)})`, backgroundSize: 'cover', backgroundPosition, backgroundAttachment: 'scroll' } : {}) }} className={`story-atmosphere relative w-full min-w-0 overflow-hidden transition-[background] duration-[1800ms] ${spacing}`}>
+    <article data-story-zone={zone} data-has-background={backgroundImage ? 'true' : 'false'} style={{ background: bgByZone[zone] ?? bgByZone.default, ...(backgroundImage ? { backgroundImage: `url(${JSON.stringify(backgroundImage)})`, backgroundSize: 'cover', backgroundPosition, backgroundAttachment: 'scroll' } : {}) }} className={`story-atmosphere relative w-full min-w-0 overflow-hidden ${spacing}`}>
       {backgroundImage && <div aria-hidden className="absolute inset-0 bg-[#0A0809]" style={{ opacity: overlayOpacity }} />}
       <div aria-hidden className="cinema-vignette absolute inset-0" />
       {zone === 'forest' && <Treeline />}
       {zone === 'dusk' && <div className="dusk-veil" />}
-      {decoration && <EffectsLayer decorations={decoration} seed={row.sort_tiebreak + row.occurred_at.length} gifUrl={gifUrl} />}
+      {decoration && <EffectsLayer decorations={decoration} seed={row.sort_tiebreak + row.occurred_at.length} gifUrl={gifUrl} disabled={liteMotion} />}
       <div className="relative mx-auto w-full max-w-page px-[22px]">
         {isSpecial && <div className="mb-8 text-center"><div className="text-[12px] uppercase tracking-[3px] text-gold">{specialMomentLabel}</div><div className="mx-auto mt-4 h-px w-12 bg-gold/55" /></div>}
         <DateStamp date={wallClockDate(row.occurred_at, effectiveTimeFormat)} time={!hideTime && effectiveTimeFormat !== 'relative' ? wallClockTime(row.occurred_at, effectiveTimeFormat) : null} label={label} variant={effectiveDateStyle} align={effectiveDateAlign} font={effectiveDateFont} dark />
         {title && !isInteractive && <h3 className="mb-5 text-center font-serif text-3xl text-[#F4EFE6]">{title}</h3>}
         {isInteractive && text ? <InteractiveMoment kind={interactionKind} title={title} text={text} row={row} token={token} dark fontClass={fontOverride ?? 'font-serif'} /> : <>
-          {media && <motion.div style={{ y: parallaxY }} className="mb-8 min-w-0 max-w-full">
+          {media && <div className="mb-8 min-w-0 max-w-full">
             {galleryRows && galleryRows.length > 1 ? <ScreenshotGallery rows={galleryRows} token={token} renderFrame={(children, minimal) => <Frame frame={minimal ? 'minimal' : frame}>{children}</Frame>} /> : <Frame frame={frame}><ReaderMedia row={row} token={token} /></Frame>}
             {photoReaction && <div className="mt-3 text-center font-script text-lg opacity-70">{photoReaction}</div>}
-          </motion.div>}
+          </div>}
           {framedTextNode}
         </>}
         {row.screenshot_reaction_emoji && <div className="mx-auto mt-6 max-w-[330px] border-t border-white/10 px-4 py-4 text-center text-white/75"><span className="text-xl">{row.screenshot_reaction_emoji}</span>{row.screenshot_reaction_text && <p className="mt-1 overflow-wrap-anywhere font-script text-lg">{row.screenshot_reaction_text}</p>}</div>}
-        {(row.screenshot_id || isSpecial) && <ReaderReaction elementId={row.element_id} token={token} dark />}
+        <ReaderReaction elementId={row.element_id} token={token} dark />
       </div>
     </article>
   );
   const reveal = revealPreset(revealAnimation);
-  return <motion.div style={{ transformPerspective: 900 }} initial={reducedMotion ? undefined : reveal.initial} whileInView={reducedMotion ? undefined : reveal.animate} viewport={{ once: true, margin: '-7% 0px' }} transition={{ duration: revealAnimation === 'words' ? .72 : .92, ease: [0.22, 1, 0.36, 1] }}>{content}</motion.div>;
+  return <motion.div style={{ transformPerspective: 900 }} initial={liteMotion ? undefined : reveal.initial} whileInView={liteMotion ? undefined : reveal.animate} viewport={{ once: true, margin: '-7% 0px' }} transition={{ duration: revealAnimation === 'words' ? .72 : .82, ease: [0.22, 1, 0.36, 1] }}>{content}</motion.div>;
 }
+
+export default memo(StoryElement);

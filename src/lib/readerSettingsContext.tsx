@@ -13,6 +13,8 @@ import { createContext, useContext } from 'react';
 
 export type TimeFormatId = 'default' | '12h' | 'short' | 'relative' | 'weekday';
 export type DateStyleId = 'line' | 'centered' | 'ribbon' | 'handwritten' | 'capsule' | 'split';
+export type LoaderStyleId = 'hearts' | 'sparkles' | 'minimal';
+export type MotionModeId = 'auto' | 'full' | 'lite';
 
 export const TIME_FORMAT_OPTIONS: { id: TimeFormatId; label: string; hint: string }[] = [
   { id: 'default', label: 'Обычный', hint: '3 марта 2024 · 21:40' },
@@ -36,6 +38,10 @@ export interface ReaderDisplaySettings {
   coverSubtitle: string;
   closingMessage: string;
   coverBackgroundUrl: string;
+  loaderTitle: string;
+  loaderSubtitle: string;
+  loaderStyle: LoaderStyleId;
+  motionMode: MotionModeId;
 }
 
 export const ReaderSettingsContext = createContext<ReaderDisplaySettings>({
@@ -49,6 +55,10 @@ export const ReaderSettingsContext = createContext<ReaderDisplaySettings>({
   coverSubtitle: 'история впереди',
   closingMessage: 'история продолжается',
   coverBackgroundUrl: '',
+  loaderTitle: 'Моя история грузится',
+  loaderSubtitle: 'Немного подожди — я бережно собираю всё по страницам.',
+  loaderStyle: 'hearts',
+  motionMode: 'auto',
 });
 
 export function useReaderSettings() {
@@ -70,5 +80,22 @@ export function readDisplaySettingsFromTheme(theme: Record<string, unknown> | un
   const coverSubtitle = typeof theme?.coverSubtitle === 'string' && theme.coverSubtitle.trim() ? theme.coverSubtitle.trim() : 'история впереди';
   const closingMessage = typeof theme?.closingMessage === 'string' && theme.closingMessage.trim() ? theme.closingMessage.trim() : 'история продолжается';
   const coverBackgroundUrl = typeof theme?.coverBackgroundUrl === 'string' ? theme.coverBackgroundUrl.trim() : '';
-  return { specialMomentLabel: label, timeFormat, readerFont, dateStyle, dateAlign, dateFont, hideTime, coverSubtitle, closingMessage, coverBackgroundUrl };
+  const loaderTitle = typeof theme?.loaderTitle === 'string' && theme.loaderTitle.trim() ? theme.loaderTitle.trim() : 'Моя история грузится';
+  const loaderSubtitle = typeof theme?.loaderSubtitle === 'string' && theme.loaderSubtitle.trim() ? theme.loaderSubtitle.trim() : 'Немного подожди — я бережно собираю всё по страницам.';
+  const loaderStyle = theme?.loaderStyle === 'sparkles' || theme?.loaderStyle === 'minimal' ? theme.loaderStyle : 'hearts';
+  const motionMode = theme?.motionMode === 'full' || theme?.motionMode === 'lite' ? theme.motionMode : 'auto';
+  return { specialMomentLabel: label, timeFormat, readerFont, dateStyle, dateAlign, dateFont, hideTime, coverSubtitle, closingMessage, coverBackgroundUrl, loaderTitle, loaderSubtitle, loaderStyle, motionMode };
+}
+
+export function prefersLiteReaderMotion(mode: MotionModeId): boolean {
+  if (mode === 'lite') return true;
+  if (mode === 'full' || typeof navigator === 'undefined') return false;
+  const deviceMemory = Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8);
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  return Boolean(
+    connection?.saveData
+    || connection?.effectiveType === '2g'
+    || deviceMemory <= 4
+    || navigator.hardwareConcurrency <= 4,
+  );
 }

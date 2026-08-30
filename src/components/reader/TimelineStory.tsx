@@ -18,9 +18,11 @@ import type { PublicTimelineCursor, PublicTimelineRow } from '@/lib/readerApi';
 import {
   comparePublicTimelineRows,
   fetchPublicTimeline,
+  fetchResumeTimeline,
   preloadTimelineMedia,
   recordReaderAnalytics,
 } from '@/lib/readerApi';
+import { useReaderSettings } from '@/lib/readerSettingsContext';
 import StoryElement from './StoryElement';
 
 interface ReadingPlace {
@@ -54,8 +56,18 @@ function scrollToElement(id: string, behavior: ScrollBehavior = 'smooth') {
   document.querySelector<HTMLElement>(`[data-reader-element="${id}"]`)?.scrollIntoView({ behavior, block: 'start' });
 }
 
+function nearestVisualMedia(rows: PublicTimelineRow[], count = 2) {
+  return rows.filter((row) => Boolean(
+    row.media_id
+    || row.screenshot_id
+    || row.memory_photo_storage_path
+    || (typeof row.style?.externalMediaUrl === 'string' && row.style.externalMediaUrl),
+  )).slice(0, count);
+}
+
 function JourneyLoader({ state, onRetry }: { state: LoaderState; onRetry: () => void }) {
   const reduced = useReducedMotion();
+  const settings = useReaderSettings();
   const isError = state.phase === 'error';
   return (
     <motion.div
@@ -69,16 +81,14 @@ function JourneyLoader({ state, onRetry }: { state: LoaderState; onRetry: () => 
       <div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(173,91,126,.24),transparent_33%),radial-gradient(circle_at_50%_82%,rgba(201,160,99,.12),transparent_38%)]" />
       <div aria-hidden className="cinema-vignette absolute inset-0" />
       <div className="relative w-full max-w-[360px] text-center">
-        <motion.div
-          animate={reduced || isError ? undefined : { rotate: [0, 8, -6, 0], scale: [1, 1.08, 1] }}
-          transition={{ duration: 3.4, repeat: Infinity, ease: 'easeInOut' }}
-          className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-gold/30 bg-white/[.035] text-gold shadow-[0_0_55px_rgba(201,160,99,.12)]"
-        >
-          {isError ? <RotateCcw size={22} /> : <Sparkles size={23} />}
-        </motion.div>
-        <div className="mt-7 text-[10px] uppercase tracking-[4px] text-gold/60">подготавливаю путешествие</div>
-        <h2 className="mt-3 font-serif text-[34px] leading-tight">{state.label}</h2>
-        <p className="mx-auto mt-3 max-w-[280px] text-xs leading-relaxed text-white/42">{state.detail}</p>
+        {isError ? <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-gold/30 bg-white/[.035] text-gold"><RotateCcw size={22} /></div>
+          : settings.loaderStyle === 'hearts' ? <div className="story-heart-loader mx-auto" aria-hidden="true"><span>♡</span><span>♡</span><span>♡</span></div>
+          : settings.loaderStyle === 'minimal' ? <div className="story-loader-ring mx-auto" aria-hidden="true" />
+          : <motion.div animate={reduced ? undefined : { rotate: [0, 8, -6, 0], scale: [1, 1.08, 1] }} transition={{ duration: 3.4, repeat: Infinity, ease: 'easeInOut' }} className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-gold/30 bg-white/[.035] text-gold shadow-[0_0_55px_rgba(201,160,99,.12)]"><Sparkles size={23} /></motion.div>}
+        <div className="mt-7 text-[10px] uppercase tracking-[4px] text-gold/60">{isError ? 'попробуем ещё раз' : 'подготавливаю путешествие'}</div>
+        <h2 className="mt-3 font-serif text-[34px] leading-tight">{isError ? state.label : settings.loaderTitle}</h2>
+        <p className="mx-auto mt-3 max-w-[280px] text-xs leading-relaxed text-white/42">{isError ? state.detail : settings.loaderSubtitle}</p>
+        {!isError && <p className="mx-auto mt-2 max-w-[280px] text-[10px] leading-relaxed text-white/25">{state.detail}</p>}
         {!isError ? (
           <>
             <div className="mt-9 overflow-hidden rounded-full bg-white/[.07] p-[2px]">
@@ -99,11 +109,13 @@ function JourneyTools({
   progress,
   currentChapter,
   readingPlace,
+  total,
 }: {
   rows: PublicTimelineRow[];
   progress: number;
   currentChapter: string;
   readingPlace: ReadingPlace | null;
+  total: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const [autoScroll, setAutoScroll] = useState(false);
@@ -116,7 +128,7 @@ function JourneyTools({
     id: row.element_id,
     title: typeof row.metadata?.title === 'string' ? row.metadata.title : 'Новая глава',
   })), [rows]);
-  const minutesLeft = Math.max(1, Math.ceil((rows.length * (100 - progress) / 100) * 0.18));
+  const minutesLeft = Math.max(1, Math.ceil((((total ?? rows.length) * (100 - progress)) / 100) * 0.18));
 
   useEffect(() => {
     document.documentElement.dataset.readerText = textSize;
@@ -126,14 +138,20 @@ function JourneyTools({
 
   useEffect(() => {
     if (!autoScroll) return;
-    const timer = window.setInterval(() => {
+    let frame = 0;
+    let previous = performance.now();
+    const tick = (now: number) => {
       if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 8) {
         setAutoScroll(false);
         return;
       }
-      window.scrollBy(0, 1);
-    }, 34);
-    return () => window.clearInterval(timer);
+      const elapsed = Math.min(50, now - previous);
+      previous = now;
+      window.scrollBy(0, elapsed * 0.03);
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
   }, [autoScroll]);
 
   function saveBookmark() {
@@ -183,72 +201,167 @@ function JourneyTools({
 export default function TimelineStory({ token, track = true }: { token: string; track?: boolean }) {
   const [rows, setRows] = useState<PublicTimelineRow[]>([]);
   const [booting, setBooting] = useState(true);
-  const [loader, setLoader] = useState<LoaderState>({ phase: 'pages', progress: 4, label: 'Собираю страницы', detail: 'Текст, даты и главы выстраиваются в правильном порядке.' });
+  const [loader, setLoader] = useState<LoaderState>({ phase: 'pages', progress: 8, label: 'Собираю страницы', detail: 'Загружаю первую часть истории.' });
   const [retryKey, setRetryKey] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [readProgress, setReadProgress] = useState(0);
   const [readingPlace, setReadingPlace] = useState<ReadingPlace | null>(() => track ? savedReadingPlace() : null);
+  const [showResumeCard, setShowResumeCard] = useState(() => Boolean(track && savedReadingPlace()));
+  const [resumeLoading, setResumeLoading] = useState(false);
+  const [positionOffset, setPositionOffset] = useState(0);
   const [currentChapter, setCurrentChapter] = useState('');
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState('');
   const runId = useRef(0);
+  const cursorRef = useRef<PublicTimelineCursor | null>(null);
+  const hasMoreRef = useRef(false);
+  const loadingMoreRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const reportTimer = useRef(0);
   const visitId = useRef(crypto.randomUUID());
   const lastReported = useRef({ id: '', progress: 0 });
+
+  const setPaging = useCallback((cursor: PublicTimelineCursor | null, nextHasMore: boolean) => {
+    cursorRef.current = cursor;
+    hasMoreRef.current = nextHasMore && Boolean(cursor);
+    setHasMore(hasMoreRef.current);
+  }, []);
 
   const loadJourney = useCallback(async () => {
     const currentRun = ++runId.current;
     setBooting(true);
     setRows([]);
-    setLoader({ phase: 'pages', progress: 4, label: 'Собираю страницы', detail: 'Текст, даты и главы выстраиваются в правильном порядке.' });
+    setPositionOffset(0);
+    setMoreError('');
+    setLoader({ phase: 'pages', progress: 8, label: 'Собираю страницы', detail: 'Загружаю первую часть истории.' });
     try {
-      let cursor: PublicTimelineCursor | null = null;
-      let hasMore = true;
-      let page = 0;
-      const collected = new Map<string, PublicTimelineRow>();
-      while (hasMore && page < 250) {
-        const result = await fetchPublicTimeline(cursor, token);
-        if (currentRun !== runId.current) return;
-        result.elements.forEach((row) => collected.set(row.element_id, row));
-        cursor = result.nextCursor;
-        hasMore = result.hasMore && Boolean(cursor);
-        page += 1;
-        setLoader({ phase: 'pages', progress: Math.min(54, 8 + page * 7), label: 'Собираю страницы', detail: `Уже найдено ${collected.size.toLocaleString('ru-RU')} фрагментов истории.` });
-      }
-      if (page >= 250 && hasMore) throw new Error('История слишком большая для одной загрузки.');
-
-      const ordered = Array.from(collected.values()).sort(comparePublicTimelineRows);
-      setLoader({ phase: 'media', progress: 56, label: 'Проявляю воспоминания', detail: 'Фотографии и обложки загружаются заранее, чтобы чтение не прерывалось.' });
-      await preloadTimelineMedia(ordered, token, (completed, mediaTotal) => {
+      const result = await fetchPublicTimeline(null, token);
+      if (currentRun !== runId.current) return;
+      const ordered = [...result.elements].sort(comparePublicTimelineRows);
+      setRows(ordered);
+      setPaging(result.nextCursor, result.hasMore);
+      setLoader({ phase: 'media', progress: 62, label: 'Проявляю воспоминания', detail: 'Готовлю фотографии с первых страниц.' });
+      await preloadTimelineMedia(nearestVisualMedia(ordered), token, (completed, mediaTotal) => {
         if (currentRun !== runId.current) return;
         const ratio = mediaTotal ? completed / mediaTotal : 1;
-        setLoader({ phase: 'media', progress: 56 + ratio * 40, label: 'Проявляю воспоминания', detail: mediaTotal ? `${completed} из ${mediaTotal} медиа готовы.` : 'Все страницы готовы.' });
+        setLoader({ phase: 'media', progress: 62 + ratio * 34, label: 'Проявляю воспоминания', detail: mediaTotal ? `${completed} из ${mediaTotal} первых медиа готовы.` : 'Первая часть готова.' });
       });
       if (currentRun !== runId.current) return;
-      setRows(ordered);
-      setLoader({ phase: 'ready', progress: 100, label: 'Можно начинать', detail: `${ordered.length.toLocaleString('ru-RU')} фрагментов выстроены в одно путешествие.` });
-      window.setTimeout(() => { if (currentRun === runId.current) setBooting(false); }, 450);
+      setLoader({ phase: 'ready', progress: 100, label: 'Можно начинать', detail: 'Первая часть истории готова. Остальное появится незаметно во время чтения.' });
+      window.setTimeout(() => { if (currentRun === runId.current) setBooting(false); }, 220);
     } catch (error) {
       if (currentRun !== runId.current) return;
       setLoader({ phase: 'error', progress: 0, label: 'История не открылась', detail: error instanceof Error ? error.message : 'Проверь соединение и попробуй ещё раз.' });
     }
-  }, [token]);
+  }, [setPaging, token]);
 
   useEffect(() => {
     void loadJourney();
-    return () => { runId.current += 1; };
+    return () => {
+      runId.current += 1;
+      window.clearTimeout(reportTimer.current);
+    };
   }, [loadJourney, retryKey]);
+
+  const loadMore = useCallback(async () => {
+    const cursor = cursorRef.current;
+    if (!cursor || !hasMoreRef.current || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setMoreError('');
+    try {
+      const result = await fetchPublicTimeline(cursor, token);
+      setRows((current) => {
+        const merged = new Map(current.map((row) => [row.element_id, row]));
+        result.elements.forEach((row) => merged.set(row.element_id, row));
+        return Array.from(merged.values()).sort(comparePublicTimelineRows);
+      });
+      setPaging(result.nextCursor, result.hasMore);
+      void preloadTimelineMedia(nearestVisualMedia(result.elements), token);
+    } catch (error) {
+      setMoreError(error instanceof Error ? error.message : 'Следующая часть пока не загрузилась.');
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [setPaging, token]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || booting || !hasMore) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) void loadMore();
+    }, { rootMargin: '1400px 0px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [booting, hasMore, loadMore]);
+
+  const resumeFromSavedPlace = useCallback(async () => {
+    if (!readingPlace || resumeLoading) return;
+    if (rows.some((row) => row.element_id === readingPlace.elementId)) {
+      setShowResumeCard(false);
+      scrollToElement(readingPlace.elementId);
+      return;
+    }
+    setResumeLoading(true);
+    setMoreError('');
+    try {
+      const result = await fetchResumeTimeline(readingPlace.elementId, token);
+      const ordered = [...result.elements].sort(comparePublicTimelineRows);
+      setPositionOffset(Math.max(0, readingPlace.position - 1));
+      setRows(ordered);
+      setPaging(result.nextCursor, result.hasMore);
+      setCurrentChapter(readingPlace.chapter);
+      setReadProgress((current) => Math.max(current, readingPlace.progress));
+      setShowResumeCard(false);
+      void preloadTimelineMedia(nearestVisualMedia(ordered), token);
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => scrollToElement(readingPlace.elementId, 'auto')));
+    } catch (error) {
+      setMoreError(error instanceof Error ? error.message : 'Сохранённое место пока не открылось.');
+    } finally {
+      setResumeLoading(false);
+    }
+  }, [readingPlace, resumeLoading, rows, setPaging, token]);
 
   const renderedRows = useMemo(() => {
     const result: Array<{ row: PublicTimelineRow; galleryRows?: PublicTimelineRow[]; position: number }> = [];
+    const collections = new Map<string, number>();
     rows.forEach((row, index) => {
+      const position = positionOffset + index + 1;
       const groupId = row.screenshot_collection_id;
-      if (!groupId) { result.push({ row, position: index + 1 }); return; }
-      const firstIndex = rows.findIndex((candidate) => candidate.screenshot_collection_id === groupId);
-      if (firstIndex !== index) return;
-      const galleryRows = rows.filter((candidate) => candidate.screenshot_collection_id === groupId);
-      const lastPosition = Math.max(...galleryRows.map((candidate) => rows.indexOf(candidate) + 1));
-      result.push({ row, galleryRows, position: lastPosition });
+      if (!groupId) {
+        result.push({ row, position });
+        return;
+      }
+      const existingIndex = collections.get(groupId);
+      if (existingIndex === undefined) {
+        collections.set(groupId, result.length);
+        result.push({ row, galleryRows: [row], position });
+        return;
+      }
+      const existing = result[existingIndex];
+      existing.galleryRows?.push(row);
+      existing.position = position;
     });
     return result;
-  }, [rows]);
+  }, [positionOffset, rows]);
+
+  const chunks = useMemo(() => {
+    const result: Array<typeof renderedRows> = [];
+    for (let index = 0; index < renderedRows.length; index += 12) result.push(renderedRows.slice(index, index + 12));
+    return result;
+  }, [renderedRows]);
+
+  const elementMeta = useMemo(() => {
+    const result = new Map<string, { position: number; chapter: string }>();
+    let chapter = positionOffset > 0 ? readingPlace?.chapter ?? '' : '';
+    renderedRows.forEach((item) => {
+      if (item.row.type === 'chapter' && typeof item.row.metadata?.title === 'string') chapter = item.row.metadata.title;
+      result.set(item.row.element_id, { position: item.position, chapter });
+    });
+    return result;
+  }, [positionOffset, readingPlace?.chapter, renderedRows]);
 
   useEffect(() => {
     if (!track || booting) return;
@@ -261,7 +374,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
   }, [token, track, booting]);
 
   useEffect(() => {
-    if (!track || booting || rows.length === 0) return;
+    if (!track || booting || renderedRows.length === 0) return;
     const visitorId = localStorage.getItem('for-you-reader-id');
     if (!visitorId) return;
     const elements = Array.from(document.querySelectorAll<HTMLElement>('[data-reader-element]'));
@@ -269,32 +382,31 @@ export default function TimelineStory({ token, track = true }: { token: string; 
       const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
       const target = visible[0]?.target as HTMLElement | undefined;
       if (!target) return;
-      const position = Number(target.dataset.readerPosition ?? 0);
       const elementId = target.dataset.readerElement ?? '';
-      if (!elementId || !position) return;
-      const denominator = total ?? rows.length;
-      const progress = Math.max(1, Math.min(100, Math.round((position / Math.max(1, denominator)) * 100)));
+      const meta = elementMeta.get(elementId);
+      if (!elementId || !meta) return;
+      const denominator = total ?? Math.max(meta.position, positionOffset + rows.length + (hasMore ? 1 : 0));
+      const progress = Math.max(1, Math.min(100, Math.round((meta.position / Math.max(1, denominator)) * 100)));
       setReadProgress((current) => Math.max(current, progress));
-      const rowIndex = rows.findIndex((row) => row.element_id === elementId);
-      const chapterRow = rowIndex >= 0 ? [...rows.slice(0, rowIndex + 1)].reverse().find((row) => row.type === 'chapter') : null;
-      const chapter = chapterRow && typeof chapterRow.metadata?.title === 'string' ? chapterRow.metadata.title : currentChapter;
-      if (chapter) setCurrentChapter(chapter);
-      if (position > 3) {
-        const place = { elementId, position, progress, chapter: chapter || '' };
+      if (meta.chapter) setCurrentChapter(meta.chapter);
+      if (meta.position > 3) {
+        const place = { elementId, position: meta.position, progress, chapter: meta.chapter };
         localStorage.setItem(READING_PLACE_KEY, JSON.stringify(place));
         setReadingPlace(place);
       }
       if (lastReported.current.id === elementId && progress <= lastReported.current.progress) return;
       lastReported.current = { id: elementId, progress };
-      window.clearTimeout(Number(target.dataset.readerTimer ?? 0));
-      const timer = window.setTimeout(() => {
-        void recordReaderAnalytics({ action: progress >= 99 ? 'complete' : 'progress', visitorId, visitId: visitId.current, elementId, position, progress }, token);
+      window.clearTimeout(reportTimer.current);
+      reportTimer.current = window.setTimeout(() => {
+        void recordReaderAnalytics({ action: progress >= 99 ? 'complete' : 'progress', visitorId, visitId: visitId.current, elementId, position: meta.position, progress }, token);
       }, 900);
-      target.dataset.readerTimer = String(timer);
     }, { threshold: [0.35, 0.65], rootMargin: '-12% 0px -18%' });
     elements.forEach((element) => observer.observe(element));
-    return () => observer.disconnect();
-  }, [rows, total, token, track, currentChapter, booting]);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(reportTimer.current);
+    };
+  }, [booting, elementMeta, hasMore, positionOffset, renderedRows.length, rows.length, token, total, track]);
 
   return <div className="w-full">
     <AnimatePresence>{booting && <JourneyLoader state={loader} onRetry={() => setRetryKey((value) => value + 1)} />}</AnimatePresence>
@@ -302,10 +414,14 @@ export default function TimelineStory({ token, track = true }: { token: string; 
     {!booting && rows.length > 0 && <>
       <div className="pointer-events-none fixed inset-x-0 top-0 z-40 h-px bg-white/5"><div className="h-full bg-gold/80 transition-[width] duration-700" style={{ width: `${readProgress}%` }} /></div>
       {currentChapter && <div className="pointer-events-none fixed inset-x-0 top-3 z-30 text-center"><span className="inline-block max-w-[78vw] truncate rounded-full bg-black/35 px-4 py-1.5 text-[9px] uppercase tracking-[2px] text-gold/65 backdrop-blur-md">{currentChapter}</span></div>}
-      {readingPlace && <div className="flex min-h-[24vh] items-center justify-center bg-[#0B0B0D] px-6"><button type="button" onClick={() => scrollToElement(readingPlace.elementId)} className="group border-y border-gold/25 px-7 py-6 text-center text-[#F4EFE6] transition hover:border-gold/50"><BookOpen className="mx-auto text-gold/70" size={20}/><span className="mt-3 block font-serif text-xl">Продолжить с места</span><span className="mt-1 block text-[10px] uppercase tracking-[2px] text-white/35">прочитано {readingPlace.progress}%{readingPlace.chapter ? ` · ${readingPlace.chapter}` : ''}</span></button></div>}
-      {renderedRows.map(({ row, galleryRows, position }) => <div key={row.screenshot_collection_id ?? row.element_id} data-reader-element={row.element_id} data-reader-position={position}><StoryElement row={row} galleryRows={galleryRows} token={token} /></div>)}
-      <div className="bg-[#0B0B0D] px-6 pb-40 pt-24 text-center text-[#F4EFE6]"><div className="mx-auto h-px w-20 bg-gold/50" /><p className="mt-6 font-script text-3xl text-[#F4EFE6]/75">продолжение следует</p><p className="mt-2 text-xs uppercase tracking-[2px] text-gold/40">новая глава появится здесь</p></div>
-      <JourneyTools rows={rows} progress={readProgress} currentChapter={currentChapter} readingPlace={readingPlace} />
+      {showResumeCard && readingPlace && <div className="flex min-h-[24vh] items-center justify-center bg-[#0B0B0D] px-6"><button type="button" disabled={resumeLoading} onClick={() => void resumeFromSavedPlace()} className="group border-y border-gold/25 px-7 py-6 text-center text-[#F4EFE6] transition hover:border-gold/50 disabled:opacity-55"><BookOpen className="mx-auto text-gold/70" size={20}/><span className="mt-3 block font-serif text-xl">{resumeLoading ? 'Открываю это место…' : 'Продолжить с места'}</span><span className="mt-1 block text-[10px] uppercase tracking-[2px] text-white/35">прочитано {readingPlace.progress}%{readingPlace.chapter ? ` · ${readingPlace.chapter}` : ''}</span></button></div>}
+      {chunks.map((chunk, chunkIndex) => <div className="story-page-chunk" key={chunk[0]?.row.element_id ?? chunkIndex}>{chunk.map(({ row, galleryRows, position }) => <div key={row.screenshot_collection_id ?? row.element_id} data-reader-element={row.element_id} data-reader-position={position}><StoryElement row={row} galleryRows={galleryRows} token={token} /></div>)}</div>)}
+      <div ref={sentinelRef} className="flex min-h-24 items-center justify-center bg-[#0B0B0D] px-6 text-center text-[#F4EFE6]/45">
+        {loadingMore && <div><div className="story-loader-ring mx-auto h-7 w-7"/><div className="mt-3 text-[10px] uppercase tracking-[2px]">готовлю следующие страницы</div></div>}
+        {!loadingMore && moreError && <button type="button" onClick={() => void loadMore()} className="rounded-full border border-gold/25 px-5 py-3 text-xs text-gold">Загрузить дальше ещё раз</button>}
+      </div>
+      {!hasMore && <div className="bg-[#0B0B0D] px-6 pb-40 pt-24 text-center text-[#F4EFE6]"><div className="mx-auto h-px w-20 bg-gold/50" /><p className="mt-6 font-script text-3xl text-[#F4EFE6]/75">продолжение следует</p><p className="mt-2 text-xs uppercase tracking-[2px] text-gold/40">новая глава появится здесь</p></div>}
+      <JourneyTools rows={rows} total={total} progress={readProgress} currentChapter={currentChapter} readingPlace={readingPlace} />
     </>}
   </div>;
 }

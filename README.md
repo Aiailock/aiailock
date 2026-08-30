@@ -16,7 +16,8 @@ The project is now completed across the planned stages:
 - **8. Interaction + analytics:** real and bulk deletion, bulk styling, text frames, six tap-to-reveal moment types, additional fonts, browser-friendly admin controls and privacy-preserving reader progress statistics (`0012_interactions_analytics_admin.sql`).
 - **9. Mobile Story Studio:** phone-first composer with drafts/templates, chapters, screenshot albums, GIF scenes, six date designs, remote backgrounds and private reader reactions (`0013_story_studio.sql`).
 - **10. Cinematic + Safety:** dark graphite/gold reader, quote and pause scenes, resume reading, current chapter, scheduled publication, revision restore, integrity checks and downloadable JSON backups (`0014_cinematic_safety.sql`).
-- **11. Journey Reader:** exact Admin → Reader ordering without changing real dates, full story/media preloader, visible time-of-day atmospheres, eight reveal animations, twelve interactive moments, journey map, bookmarks, auto-reading and reader typography controls (`0015_journey_reader_order.sql`).
+- **11. Journey Reader:** exact Admin → Reader ordering without changing real dates, visible time-of-day atmospheres, eight reveal animations, twelve interactive moments, journey map, bookmarks, auto-reading and reader typography controls (`0015_journey_reader_order.sql`).
+- **12. Smooth Reader + Opinions:** fast first-page boot, automatic continuation loading, off-screen rendering isolation, phone-aware motion budget, configurable heart loader, written opinions on every story element and a faster mobile multi-screenshot composer (`0016_reader_opinions_performance.sql`).
 
 The public reader never receives `service_role`, AI metadata internals, prompt versions, import logs or admin controls.
 
@@ -63,6 +64,7 @@ The migration chain is intentionally ordered:
 0013_story_studio.sql
 0014_cinematic_safety.sql
 0015_journey_reader_order.sql
+0016_reader_opinions_performance.sql
 ```
 
 Supabase's CLI supports linking a project and deploying migrations/functions as code.
@@ -104,7 +106,7 @@ supabase functions deploy reader-reaction
 - `reader-reaction` → public endpoint with its own signed reader-token check
 
 ### Final schema migration
-Run `supabase db push` once from a linked project. The ordered migration chain through `0015_journey_reader_order.sql` is applied automatically.
+Run `supabase db push` once from a linked project. The ordered migration chain through `0016_reader_opinions_performance.sql` is applied automatically.
 
 ## Required Edge Function secret
 

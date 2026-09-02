@@ -65,7 +65,7 @@ export default function SafetyPanel() {
   async function downloadBackup() {
     setBusy(true); setNotice('Собираю резервную копию…');
     try {
-      const tables = ['history_settings', 'imports', 'messages', 'media', 'ai_metadata', 'memories', 'screenshots', 'timeline_elements', 'reader_reactions', 'story_revisions'];
+      const tables = ['history_settings', 'imports', 'messages', 'media', 'ai_metadata', 'memories', 'screenshots', 'timeline_elements', 'reader_reactions', 'ai_story_batches', 'ai_story_suggestions', 'story_revisions'];
       const entries = await Promise.all(tables.map(async (table) => [table, await allRows(table)] as const));
       const backup = { format: 'aiailock-backup', version: 14, createdAt: new Date().toISOString(), note: 'Данные и ссылки на медиа; сами файлы Storage не включены.', tables: Object.fromEntries(entries) };
       const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));

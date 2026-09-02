@@ -78,6 +78,27 @@ Deno.serve(async (req) => {
     const { data, error } = await query;
     if (error) throw new Error(error.message);
 
+    // The story itself is paginated, but the journey map must know every
+    // chapter immediately. Fetch only tiny chapter summaries plus the exact
+    // total, instead of forcing the reader to download the whole book first.
+    const chapterQuery = db
+      .from('reader_journey_chapters')
+      .select('element_id,display_order,story_position,title')
+      .order('story_position', { ascending: true });
+    let totalQuery = db.from(table).select('element_id', { count: 'exact', head: true });
+    if (previewBatchId) {
+      totalQuery = totalQuery.or(`is_reader_visible.eq.true,ai_batch_id.eq.${previewBatchId}`);
+    }
+    const [chapterResult, totalResult] = await Promise.all([chapterQuery, totalQuery]);
+    if (chapterResult.error) throw new Error(chapterResult.error.message);
+    if (totalResult.error) throw new Error(totalResult.error.message);
+    const chapters = (chapterResult.data ?? []).map((chapter: Record<string, unknown>) => ({
+      elementId: chapter.element_id,
+      displayOrder: chapter.display_order,
+      storyPosition: chapter.story_position,
+      title: typeof chapter.title === 'string' && chapter.title ? chapter.title : 'Новая глава',
+    }));
+
     // The preview view has two helper columns that are not part of PublicTimelineRow.
     const rows = (data ?? []).map((row: Record<string, unknown>) => {
       if (!previewBatchId) return row;
@@ -98,6 +119,8 @@ Deno.serve(async (req) => {
       } : null,
       resumedFrom: resumeElementId,
       previewBatchId,
+      chapters,
+      total: totalResult.count ?? rows.length,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

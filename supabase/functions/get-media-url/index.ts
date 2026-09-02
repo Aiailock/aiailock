@@ -35,10 +35,26 @@ Deno.serve(async (req) => {
     const db = serviceClient();
     await checkReaderAccess(req, db);
     const body = await req.json().catch(() => ({}));
+    const backgroundMusic = body.backgroundMusic === true;
     const mediaId = typeof body.mediaId === 'string' ? body.mediaId : null;
     const screenshotId = typeof body.screenshotId === 'string' ? body.screenshotId : null;
     const memoryId = typeof body.memoryId === 'string' ? body.memoryId : null;
-    if (!mediaId && !screenshotId && !memoryId) throw new HttpError(400, 'Не передан идентификатор медиа.');
+    if (!mediaId && !screenshotId && !memoryId && !backgroundMusic) throw new HttpError(400, 'Не передан идентификатор медиа.');
+
+    if (backgroundMusic) {
+      const { data: settings, error: settingsError } = await db
+        .from('history_settings')
+        .select('theme')
+        .eq('id', true)
+        .maybeSingle();
+      if (settingsError) throw new Error(settingsError.message);
+      const theme = settings?.theme && typeof settings.theme === 'object' ? settings.theme as Record<string, unknown> : {};
+      const path = typeof theme.backgroundMusicPath === 'string' ? theme.backgroundMusicPath : '';
+      if (!path || !path.startsWith('background/')) throw new HttpError(404, 'Своя фоновая музыка не настроена.');
+      const { data: signed, error: signError } = await db.storage.from('audio').createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+      if (signError || !signed) throw new Error(signError?.message ?? 'Не удалось открыть фоновую музыку.');
+      return json({ url: signed.signedUrl, expiresIn: SIGNED_URL_TTL_SECONDS });
+    }
 
     if (memoryId) {
       const { data: memory, error: memoryError } = await db

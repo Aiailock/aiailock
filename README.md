@@ -21,6 +21,7 @@ The project is now completed across the planned stages:
 - **13. Detailed Reader Analytics:** human-readable last-read points and reaction targets, per-visit device/browser/screen/network details, session duration and an owner-only reset for visits, progress and optional reactions (`0017_detailed_reader_analytics.sql`).
 - **14. Video + Links + Random Design:** manual private video uploads or direct video URLs, transition cards that open externally or inside the story, editable link/video scenes and unique random styling for every selected item (`0018_video_links_random_styles.sql`).
 - **15. Music + Vinyl Audio:** no-key song lookup with official previews and artwork, private owner-audio/cover uploads, and an accessible SoundCloud-inspired spinning-vinyl player (`0019_music_vinyl_audio.sql`).
+- **16. Audio + AI + Journey:** WhatsApp-like voice recording, five audio-player designs, GIF search, looping/ducking background music, live-content style previews, a complete journey map and a free-token OpenRouter AI option (`0021_reader_media_ai_update.sql`).
 
 The public reader never receives `service_role`, AI metadata internals, prompt versions, import logs or admin controls.
 

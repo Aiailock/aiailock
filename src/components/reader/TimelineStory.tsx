@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { PublicTimelineCursor, PublicTimelineRow } from '@/lib/readerApi';
+import type { PublicChapterSummary, PublicTimelineCursor, PublicTimelineRow } from '@/lib/readerApi';
 import {
   comparePublicTimelineRows,
   fetchPublicTimeline,
@@ -46,7 +46,7 @@ const TEXT_SIZE_KEY = 'for-you-reader-text-size-v1';
 function savedReadingPlace(): ReadingPlace | null {
   try {
     const value = JSON.parse(localStorage.getItem(READING_PLACE_KEY) ?? '') as Partial<ReadingPlace>;
-    return value.elementId && Number(value.position) > 3
+    return value.elementId && Number(value.position) > 0
       ? { elementId: value.elementId, position: Number(value.position), progress: Number(value.progress) || 0, chapter: String(value.chapter ?? '') }
       : null;
   } catch { return null; }
@@ -106,12 +106,16 @@ function JourneyLoader({ state, onRetry }: { state: LoaderState; onRetry: () => 
 
 function JourneyTools({
   rows,
+  chapters,
+  onJump,
   progress,
   currentChapter,
   readingPlace,
   total,
 }: {
   rows: PublicTimelineRow[];
+  chapters: PublicChapterSummary[];
+  onJump: (elementId: string, position?: number) => void | Promise<void>;
   progress: number;
   currentChapter: string;
   readingPlace: ReadingPlace | null;
@@ -123,11 +127,7 @@ function JourneyTools({
   const [bookmark, setBookmark] = useState<ReadingPlace | null>(() => {
     try { return JSON.parse(localStorage.getItem(BOOKMARK_KEY) ?? '') as ReadingPlace; } catch { return null; }
   });
-
-  const chapters = useMemo(() => rows.filter((row) => row.type === 'chapter').map((row) => ({
-    id: row.element_id,
-    title: typeof row.metadata?.title === 'string' ? row.metadata.title : 'Новая глава',
-  })), [rows]);
+  const [bookmarkSaved, setBookmarkSaved] = useState(false);
   const minutesLeft = Math.max(1, Math.ceil((((total ?? rows.length) * (100 - progress)) / 100) * 0.18));
 
   useEffect(() => {
@@ -158,12 +158,16 @@ function JourneyTools({
     if (!readingPlace) return;
     localStorage.setItem(BOOKMARK_KEY, JSON.stringify(readingPlace));
     setBookmark(readingPlace);
+    setBookmarkSaved(true);
+    window.setTimeout(() => setBookmarkSaved(false), 1400);
   }
 
   function nextChapter() {
-    const currentIndex = readingPlace ? rows.findIndex((row) => row.element_id === readingPlace.elementId) : -1;
-    const next = rows.slice(currentIndex + 1).find((row) => row.type === 'chapter');
-    if (next) scrollToElement(next.element_id);
+    const currentOrder = readingPlace
+      ? rows.find((row) => row.element_id === readingPlace.elementId)?.display_order ?? -Infinity
+      : -Infinity;
+    const next = chapters.find((chapter) => chapter.displayOrder > currentOrder);
+    if (next) void onJump(next.elementId, next.storyPosition);
     else window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
     setOpen(false);
   }
@@ -177,17 +181,17 @@ function JourneyTools({
               <div className="flex items-center justify-between"><div><div className="text-[9px] uppercase tracking-[2.5px] text-gold/55">карта путешествия</div><div className="mt-1 font-serif text-xl">{currentChapter || 'Вся история'}</div></div><button type="button" aria-label="Закрыть" onClick={() => setOpen(false)} className="rounded-full bg-white/[.06] p-2 text-white/55"><X size={16}/></button></div>
               <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
                 <button type="button" onClick={() => setAutoScroll((value) => !value)} className="rounded-2xl bg-white/[.055] p-3 text-left"><span className="flex items-center gap-2 text-gold">{autoScroll ? <Pause size={15}/> : <Play size={15}/>} Авточтение</span><span className="mt-1 block text-[10px] text-white/35">{autoScroll ? 'остановить движение' : 'медленно листать'}</span></button>
-                <button type="button" onClick={saveBookmark} disabled={!readingPlace} className="rounded-2xl bg-white/[.055] p-3 text-left disabled:opacity-35"><span className="flex items-center gap-2 text-gold"><Bookmark size={15}/> Закладка</span><span className="mt-1 block text-[10px] text-white/35">сохранить это место</span></button>
+                <button type="button" onClick={saveBookmark} disabled={!readingPlace} className="rounded-2xl bg-white/[.055] p-3 text-left disabled:opacity-35"><span className="flex items-center gap-2 text-gold"><Bookmark size={15}/> Закладка</span><span className="mt-1 block text-[10px] text-white/35">{bookmarkSaved ? 'место сохранено' : 'сохранить это место'}</span></button>
                 <button type="button" onClick={nextChapter} className="rounded-2xl bg-white/[.055] p-3 text-left"><span className="flex items-center gap-2 text-gold"><ArrowDown size={15}/> Дальше</span><span className="mt-1 block text-[10px] text-white/35">к следующей главе</span></button>
                 <button type="button" onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); setOpen(false); }} className="rounded-2xl bg-white/[.055] p-3 text-left"><span className="flex items-center gap-2 text-gold"><ChevronUp size={15}/> В начало</span><span className="mt-1 block text-[10px] text-white/35">вернуться к обложке</span></button>
               </div>
               <div className="mt-3 rounded-2xl bg-white/[.04] p-3"><div className="flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-white/60"><Type size={14}/> Размер текста</span><div className="flex rounded-full bg-black/25 p-1">{[['small','А'],['normal','Аа'],['large','АА']].map(([id,label]) => <button type="button" key={id} onClick={() => setTextSize(id)} className={`rounded-full px-2.5 py-1 text-[10px] ${textSize === id ? 'bg-gold text-black' : 'text-white/45'}`}>{label}</button>)}</div></div></div>
-              {bookmark?.elementId && <button type="button" onClick={() => { scrollToElement(bookmark.elementId); setOpen(false); }} className="mt-3 flex w-full items-center justify-between rounded-2xl border border-gold/15 px-4 py-3 text-left text-xs text-gold/75"><span><Bookmark size={13} className="mr-2 inline"/>Открыть сохранённую закладку</span><span>{bookmark.progress}%</span></button>}
-              {chapters.length > 0 && <div className="mt-4"><div className="mb-2 text-[9px] uppercase tracking-[2px] text-white/30">главы</div><div className="space-y-1">{chapters.map((chapter, index) => <button type="button" key={chapter.id} onClick={() => { scrollToElement(chapter.id); setOpen(false); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm hover:bg-white/[.06]"><span className="flex h-6 w-6 items-center justify-center rounded-full border border-gold/20 text-[9px] text-gold/65">{index + 1}</span><span className="min-w-0 flex-1 truncate font-serif text-base">{chapter.title}</span></button>)}</div></div>}
+              {bookmark?.elementId && <button type="button" onClick={() => { void onJump(bookmark.elementId, bookmark.position); setOpen(false); }} className="mt-3 flex w-full items-center justify-between rounded-2xl border border-gold/15 px-4 py-3 text-left text-xs text-gold/75"><span><Bookmark size={13} className="mr-2 inline"/>Открыть сохранённую закладку</span><span>{bookmark.progress}%</span></button>}
+              {chapters.length > 0 && <div className="mt-4"><div className="mb-2 text-[9px] uppercase tracking-[2px] text-white/30">все главы · {chapters.length}</div><div className="space-y-1">{chapters.map((chapter, index) => <button type="button" key={chapter.elementId} onClick={() => { void onJump(chapter.elementId, chapter.storyPosition); setOpen(false); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm hover:bg-white/[.06]"><span className="flex h-6 w-6 items-center justify-center rounded-full border border-gold/20 text-[9px] text-gold/65">{index + 1}</span><span className="min-w-0 flex-1 truncate font-serif text-base">{chapter.title}</span></button>)}</div></div>}
             </motion.div>
           )}
         </AnimatePresence>
-        <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-[#131116]/90 px-3 py-2.5 text-[#F4EFE6] shadow-2xl backdrop-blur-xl">
+        <button type="button" aria-expanded={open} aria-label="Открыть карту путешествия" onClick={() => setOpen((value) => !value)} className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-[#131116]/90 px-3 py-2.5 text-[#F4EFE6] shadow-2xl backdrop-blur-xl">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gold/10 text-gold"><MapIcon size={17}/></span>
           <span className="min-w-0 flex-1 text-left"><span className="block truncate text-[11px] text-white/62">{currentChapter || 'Путешествие по истории'}</span><span className="mt-1 block h-1 overflow-hidden rounded-full bg-white/[.07]"><span className="block h-full rounded-full bg-gold transition-[width] duration-700" style={{ width: `${progress}%` }}/></span></span>
           <span className="shrink-0 text-right"><span className="block text-xs text-gold">{progress}%</span><span className="flex items-center gap-1 text-[9px] text-white/30"><Gauge size={10}/>{minutesLeft} мин</span></span>
@@ -200,13 +204,14 @@ function JourneyTools({
 
 export default function TimelineStory({ token, track = true }: { token: string; track?: boolean }) {
   const [rows, setRows] = useState<PublicTimelineRow[]>([]);
+  const [allChapters, setAllChapters] = useState<PublicChapterSummary[]>([]);
   const [booting, setBooting] = useState(true);
   const [loader, setLoader] = useState<LoaderState>({ phase: 'pages', progress: 8, label: 'Собираю страницы', detail: 'Загружаю первую часть истории.' });
   const [retryKey, setRetryKey] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [readProgress, setReadProgress] = useState(0);
   const [readingPlace, setReadingPlace] = useState<ReadingPlace | null>(() => track ? savedReadingPlace() : null);
-  const [showResumeCard, setShowResumeCard] = useState(() => Boolean(track && savedReadingPlace()));
+  const [showResumeCard, setShowResumeCard] = useState(() => Boolean(track && Number(savedReadingPlace()?.position) > 3));
   const [resumeLoading, setResumeLoading] = useState(false);
   const [positionOffset, setPositionOffset] = useState(0);
   const [currentChapter, setCurrentChapter] = useState('');
@@ -240,6 +245,8 @@ export default function TimelineStory({ token, track = true }: { token: string; 
       if (currentRun !== runId.current) return;
       const ordered = [...result.elements].sort(comparePublicTimelineRows);
       setRows(ordered);
+      setAllChapters(result.chapters);
+      if (result.total !== null) setTotal(result.total);
       setPaging(result.nextCursor, result.hasMore);
       setLoader({ phase: 'media', progress: 62, label: 'Проявляю воспоминания', detail: 'Готовлю фотографии с первых страниц.' });
       await preloadTimelineMedia(nearestVisualMedia(ordered), token, (completed, mediaTotal) => {
@@ -277,6 +284,8 @@ export default function TimelineStory({ token, track = true }: { token: string; 
         result.elements.forEach((row) => merged.set(row.element_id, row));
         return Array.from(merged.values()).sort(comparePublicTimelineRows);
       });
+      setAllChapters(result.chapters);
+      if (result.total !== null) setTotal(result.total);
       setPaging(result.nextCursor, result.hasMore);
       void preloadTimelineMedia(nearestVisualMedia(result.elements), token);
     } catch (error) {
@@ -311,6 +320,8 @@ export default function TimelineStory({ token, track = true }: { token: string; 
       const ordered = [...result.elements].sort(comparePublicTimelineRows);
       setPositionOffset(Math.max(0, readingPlace.position - 1));
       setRows(ordered);
+      setAllChapters(result.chapters);
+      if (result.total !== null) setTotal(result.total);
       setPaging(result.nextCursor, result.hasMore);
       setCurrentChapter(readingPlace.chapter);
       setReadProgress((current) => Math.max(current, readingPlace.progress));
@@ -323,6 +334,33 @@ export default function TimelineStory({ token, track = true }: { token: string; 
       setResumeLoading(false);
     }
   }, [readingPlace, resumeLoading, rows, setPaging, token]);
+
+  const jumpToElement = useCallback(async (elementId: string, position?: number) => {
+    if (rows.some((row) => row.element_id === elementId)) {
+      scrollToElement(elementId);
+      return;
+    }
+    if (loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setMoreError('');
+    try {
+      const result = await fetchResumeTimeline(elementId, token);
+      const ordered = [...result.elements].sort(comparePublicTimelineRows);
+      setPositionOffset(Math.max(0, Number(position || 1) - 1));
+      setRows(ordered);
+      setAllChapters(result.chapters);
+      if (result.total !== null) setTotal(result.total);
+      setPaging(result.nextCursor, result.hasMore);
+      void preloadTimelineMedia(nearestVisualMedia(ordered), token);
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => scrollToElement(elementId, 'auto')));
+    } catch (error) {
+      setMoreError(error instanceof Error ? error.message : 'Не удалось открыть выбранную главу.');
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [rows, setPaging, token]);
 
   const renderedRows = useMemo(() => {
     const result: Array<{ row: PublicTimelineRow; galleryRows?: PublicTimelineRow[]; position: number }> = [];
@@ -389,7 +427,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
       const progress = Math.max(1, Math.min(100, Math.round((meta.position / Math.max(1, denominator)) * 100)));
       setReadProgress((current) => Math.max(current, progress));
       if (meta.chapter) setCurrentChapter(meta.chapter);
-      if (meta.position > 3) {
+      if (meta.position > 0) {
         const place = { elementId, position: meta.position, progress, chapter: meta.chapter };
         localStorage.setItem(READING_PLACE_KEY, JSON.stringify(place));
         setReadingPlace(place);
@@ -429,7 +467,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
         {!loadingMore && moreError && <button type="button" onClick={() => void loadMore()} className="rounded-full border border-gold/25 px-5 py-3 text-xs text-gold">Загрузить дальше ещё раз</button>}
       </div>
       {!hasMore && <div className="bg-[#0B0B0D] px-6 pb-40 pt-24 text-center text-[#F4EFE6]"><div className="mx-auto h-px w-20 bg-gold/50" /><p className="mt-6 font-script text-3xl text-[#F4EFE6]/75">продолжение следует</p><p className="mt-2 text-xs uppercase tracking-[2px] text-gold/40">новая глава появится здесь</p></div>}
-      <JourneyTools rows={rows} total={total} progress={readProgress} currentChapter={currentChapter} readingPlace={readingPlace} />
+      <JourneyTools rows={rows} chapters={allChapters} onJump={jumpToElement} total={total} progress={readProgress} currentChapter={currentChapter} readingPlace={readingPlace} />
     </>}
   </div>;
 }

@@ -29,6 +29,7 @@ interface ManualAudioInput {
   style?: Record<string, unknown>;
   published?: boolean;
   visibleFrom?: string | null;
+  audioPurpose?: 'music' | 'voice';
 }
 
 /**
@@ -202,6 +203,7 @@ export async function createManualAudio(input: ManualAudioInput): Promise<string
         artist: input.artist?.trim() || null,
         album: input.album?.trim() || null,
         musicSource: 'upload',
+        audioPurpose: input.audioPurpose ?? 'music',
       },
     }).eq('id', timeline.id);
     if (styleError) throw styleError;

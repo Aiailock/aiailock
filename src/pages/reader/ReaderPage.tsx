@@ -4,6 +4,7 @@ import TimelineStory from '@/components/reader/TimelineStory';
 import { fetchReaderSettings, requestReaderAccess } from '@/lib/readerApi';
 import { ReaderSettingsContext, prefersLiteReaderMotion, readDisplaySettingsFromTheme, type ReaderDisplaySettings } from '@/lib/readerSettingsContext';
 import { safeRemoteUrl } from '@/lib/safeUrl';
+import BackgroundMusic from '@/components/reader/BackgroundMusic';
 
 const TOKEN_KEY = 'for-you-reader-token';
 const DISPLAY_SETTINGS_KEY = 'for-you-display-settings-v1';
@@ -135,6 +136,7 @@ export default function ReaderPage() {
   const petals = Array.from({ length: 4 }, (_, index) => ({ left: `${14 + index * 23}%`, delay: `${index * 2.4}s`, duration: `${18 + (index % 2) * 5}s`, size: `${6 + (index % 2) * 2}px` }));
   return (
     <main className="reader-shell relative min-h-screen overflow-hidden bg-[#0B0B0D] text-[#F4EFE6]">
+      <BackgroundMusic token={token} settings={displaySettings} />
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-10 overflow-hidden">
         {petals.map((petal, index) => <svg key={index} className="petal absolute top-[-5vh] text-gold opacity-20" style={{ left: petal.left, animationDelay: petal.delay, animationDuration: petal.duration, width: petal.size, height: petal.size }} viewBox="0 0 20 20"><path d="M10 1C15 4 18 8 10 18C2 8 5 4 10 1Z" fill="currentColor"/></svg>)}
       </div>

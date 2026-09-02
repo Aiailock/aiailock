@@ -1,7 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   Check,
+  Cloud,
   Eye,
+  HardDrive,
+  KeyRound,
   Loader2,
   MonitorSmartphone,
   Sparkles,
@@ -24,6 +27,8 @@ import {
   type GeneratedSuggestion,
   type StoryContextRow,
 } from '@/lib/localStoryDirector';
+
+type DirectorEngine = 'cloud' | 'local' | 'structural';
 
 type LocalEngine = {
   chat: { completions: { create: (request: Record<string, unknown>) => Promise<{ choices?: Array<{ message?: { content?: string | null } }> }> } };
@@ -106,6 +111,8 @@ function normalizeSuggestion(generated: GeneratedSuggestion, gap: CandidateGap) 
 
 export default function LocalAiStoryDirector() {
   const engineRef = useRef<LocalEngine | null>(null);
+  const [engineMode, setEngineMode] = useState<DirectorEngine>('cloud');
+  const [apiKey, setApiKey] = useState('');
   const [modelId, setModelId] = useState<string>(MODEL_OPTIONS[0].id);
   const [mode, setMode] = useState<DirectorMode>('careful');
   const [progress, setProgress] = useState('');
@@ -135,6 +142,12 @@ export default function LocalAiStoryDirector() {
     setNotice('');
     setProgress('Подключаю локальный движок…');
     try {
+      if (navigator.storage?.estimate) {
+        const estimate = await navigator.storage.estimate();
+        const free = Math.max(0, Number(estimate.quota ?? 0) - Number(estimate.usage ?? 0));
+        if (free && free < 900_000_000) throw new Error('В браузере осталось меньше 900 МБ хранилища. Выбери облачный бесплатный режим или освободи место.');
+        await navigator.storage.persist?.();
+      }
       if (engineRef.current?.unload) await engineRef.current.unload();
       engineRef.current = null;
       setModelReady(false);
@@ -152,8 +165,29 @@ export default function LocalAiStoryDirector() {
       setModelReady(true);
       setProgress('Локальный ИИ готов. После первой загрузки модель кэшируется браузером.');
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Не удалось загрузить локальную модель.');
+      const message = error instanceof Error ? error.message : 'Не удалось загрузить локальную модель.';
+      setNotice(/quota|storage|cache|disk/i.test(message)
+        ? 'Браузеру не хватило места для локальной модели (Quota exceeded). Используй рекомендуемый облачный бесплатный режим или очисти кэш модели ниже.'
+        : message);
       setProgress('');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearLocalModelCache() {
+    setBusy(true);
+    setNotice('');
+    try {
+      if (engineRef.current?.unload) await engineRef.current.unload();
+      engineRef.current = null;
+      setModelReady(false);
+      const names = await caches.keys();
+      const targets = names.filter((name) => /webllm|mlc|tvm/i.test(name));
+      await Promise.all(targets.map((name) => caches.delete(name)));
+      setNotice(targets.length ? 'Кэш локальной модели очищен.' : 'Кэш локальной модели не найден.');
+    } catch {
+      setNotice('Браузер не дал очистить кэш автоматически. Открой настройки сайта → данные сайта → удалить.');
     } finally {
       setBusy(false);
     }
@@ -186,11 +220,38 @@ export default function LocalAiStoryDirector() {
     return result;
   }
 
+  async function askCloudAi(gaps: CandidateGap[]): Promise<GeneratedSuggestion[]> {
+    const result: GeneratedSuggestion[] = [];
+    for (let i = 0; i < gaps.length; i += 5) {
+      const chunk = gaps.slice(i, i + 5);
+      setProgress(`Бесплатный ИИ читает переходы: ${Math.min(i + chunk.length, gaps.length)} / ${gaps.length}`);
+      const { data, error } = await supabase.functions.invoke('ai-director', {
+        body: { apiKey: apiKey.trim(), model: 'openrouter/free', prompt: buildDirectorPrompt(chunk, mode) },
+      });
+      if (error) {
+        let detail = '';
+        const context = (error as { context?: unknown }).context;
+        if (context instanceof Response) {
+          const payload = await context.clone().json().catch(() => ({})) as { error?: unknown };
+          if (typeof payload.error === 'string') detail = payload.error;
+        }
+        throw new Error(detail || error.message || 'OpenRouter не ответил.');
+      }
+      if (data?.error) throw new Error(String(data.error));
+      const parsed = parseDirectorResponse(String(data?.content ?? ''));
+      result.push(...(parsed.length ? parsed : fallbackSuggestions(chunk)));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    }
+    return result;
+  }
+
   async function analyze() {
     setBusy(true);
     setNotice('');
     setShowPreview(false);
     try {
+      if (engineMode === 'cloud' && apiKey.trim().length < 20) throw new Error('Вставь бесплатный ключ OpenRouter — он нужен только на время этой вкладки.');
+      if (engineMode === 'local' && !engineRef.current) throw new Error('Сначала загрузи локальную модель или выбери облачный/структурный режим.');
       setProgress('Читаю уже опубликованную историю и считаю её ритм…');
       const context = await readAllContext();
       if (context.length < 2) throw new Error('В истории пока недостаточно элементов для анализа.');
@@ -202,7 +263,11 @@ export default function LocalAiStoryDirector() {
         return;
       }
 
-      const generated = await askLocalAi(gaps);
+      const generated = engineMode === 'cloud'
+        ? await askCloudAi(gaps)
+        : engineMode === 'local'
+          ? await askLocalAi(gaps)
+          : fallbackSuggestions(gaps);
       const gapMap = new Map(gaps.map((gap) => [gap.id, gap]));
       const usable = generated.filter((item) => item.type !== 'none' && gapMap.has(item.gapId));
       if (usable.length === 0) {
@@ -212,7 +277,11 @@ export default function LocalAiStoryDirector() {
 
       const { data: batch, error: batchError } = await supabase
         .from('ai_story_batches')
-        .insert({ mode, model_id: engineRef.current ? modelId : 'heuristic-fallback', settings: { sourceCount: context.length, candidateCount: gaps.length } })
+        .insert({
+          mode,
+          model_id: engineMode === 'cloud' ? 'openrouter/free' : engineMode === 'local' ? modelId : 'heuristic-fallback',
+          settings: { sourceCount: context.length, candidateCount: gaps.length, engineMode },
+        })
         .select('id,status')
         .single();
       if (batchError) throw batchError;
@@ -313,23 +382,45 @@ export default function LocalAiStoryDirector() {
 
   return <section className="space-y-5">
     <div className="overflow-hidden rounded-[30px] bg-gradient-to-br from-[#26141D] via-[#171014] to-[#0B0A0C] p-6 text-white shadow-xl">
-      <div className="flex items-center gap-2 text-[10px] uppercase tracking-[2.4px] text-gold"><WandSparkles size={15}/> Local AI Story Director</div>
+      <div className="flex items-center gap-2 text-[10px] uppercase tracking-[2.4px] text-gold"><WandSparkles size={15}/> AI Story Director</div>
       <h1 className="mt-3 font-serif text-4xl leading-tight">Дополнить уже готовую историю</h1>
-      <p className="mt-3 max-w-3xl text-sm leading-relaxed text-white/55">ИИ работает только в твоём браузере. Он учитывает уже вставленные музыку, GIF, фото, видео, главы и паузы. Сначала создаёт предложения и скрытый preview — публикация только после твоего подтверждения.</p>
-      <div className="mt-5 rounded-2xl border border-white/10 bg-white/[.055] p-4 text-xs leading-relaxed text-white/60"><b className="text-white/85">0 ₸ за запросы.</b> Никаких OpenAI/Claude/Gemini API. Модель загружается на твоё устройство и выполняет анализ через WebGPU.</div>
+      <p className="mt-3 max-w-3xl text-sm leading-relaxed text-white/55">Он учитывает уже вставленные музыку, GIF, фото, видео, главы и паузы. Сначала создаёт предложения и скрытый preview — публикация только после твоего подтверждения.</p>
+      <div className="mt-5 rounded-2xl border border-white/10 bg-white/[.055] p-4 text-xs leading-relaxed text-white/60"><b className="text-white/85">По умолчанию — бесплатный облачный режим.</b> Он не скачивает гигабайты в браузер и поэтому не вызывает Quota exceeded. Локальный WebGPU и структурный режим оставлены как запасные варианты.</div>
     </div>
 
     <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
       <div className="rounded-2xl border border-black/10 bg-white/75 p-5 shadow-sm">
-        <div className="flex items-center gap-2 font-medium text-burgundy"><MonitorSmartphone size={17}/> Локальный ИИ</div>
-        <label className="mt-4 block text-xs">Модель
-          <select value={modelId} disabled={busy || modelReady} onChange={(event) => setModelId(event.target.value)} className="mt-2 w-full rounded-xl border p-3 text-sm">
-            {MODEL_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-          </select>
-        </label>
-        <p className="mt-2 text-[11px] opacity-45">{MODEL_OPTIONS.find((item) => item.id === modelId)?.hint}</p>
-        <button type="button" onClick={() => void loadModel()} disabled={busy} className="mt-4 w-full rounded-xl bg-burgundy px-4 py-3 text-sm text-white disabled:opacity-45">{busy ? <Loader2 size={15} className="mr-2 inline animate-spin"/> : <Sparkles size={15} className="mr-2 inline"/>}{modelReady ? 'Перезагрузить локальный ИИ' : 'Загрузить локальный ИИ'}</button>
-        {!isWebGpuAvailable() && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">На этом браузере WebGPU не найден. Можно использовать структурный fallback, но смысловые предложения будут слабее.</p>}
+        <div className="font-medium text-burgundy">Где запустить ИИ</div>
+        <div className="mt-3 grid gap-2">
+          {([
+            ['cloud', 'Облачно · бесплатно', 'Рекомендуется: ключ OpenRouter, без большой загрузки.', Cloud],
+            ['local', 'На этом устройстве', 'WebGPU, 0 ₸, но нужно около 1–3 ГБ места.', MonitorSmartphone],
+            ['structural', 'Без нейросети', 'Только анализ ритма и паузы, ключ не нужен.', HardDrive],
+          ] as Array<[DirectorEngine, string, string, typeof Cloud]>).map(([id, label, hint, Icon]) => (
+            <button key={id} type="button" disabled={busy} onClick={() => setEngineMode(id)} className={`rounded-xl border p-3 text-left ${engineMode === id ? 'border-burgundy bg-[#F6EFE0]' : 'border-black/10 bg-white'}`}>
+              <span className="flex items-center gap-2 text-sm font-medium"><Icon size={15}/>{label}</span>
+              <span className="mt-1 block text-[10px] opacity-45">{hint}</span>
+            </button>
+          ))}
+        </div>
+        {engineMode === 'cloud' && <div className="mt-4 rounded-xl border border-burgundy/10 bg-white p-3">
+          <label className="block text-xs"><KeyRound size={13} className="mr-1 inline"/>Ключ OpenRouter
+            <input type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-or-v1-…" className="mt-2 w-full rounded-xl border p-3 text-sm" />
+          </label>
+          <ol className="mt-3 list-decimal space-y-1 pl-4 text-[10px] leading-relaxed opacity-55"><li>Открой <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="text-burgundy underline">openrouter.ai/keys</a>.</li><li>Создай бесплатный ключ и вставь выше.</li><li>Нажми «Проанализировать» справа.</li></ol>
+          <p className="mt-2 text-[10px] leading-relaxed opacity-45">Ключ не сохраняется в базе или localStorage. В облачный сервис уйдут только короткие фрагменты истории вокруг найденных переходов.</p>
+        </div>}
+        {engineMode === 'local' && <div className="mt-4">
+          <label className="block text-xs">Модель
+            <select value={modelId} disabled={busy || modelReady} onChange={(event) => setModelId(event.target.value)} className="mt-2 w-full rounded-xl border p-3 text-sm">
+              {MODEL_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </label>
+          <p className="mt-2 text-[11px] opacity-45">{MODEL_OPTIONS.find((item) => item.id === modelId)?.hint}</p>
+          <button type="button" onClick={() => void loadModel()} disabled={busy} className="mt-3 w-full rounded-xl bg-burgundy px-4 py-3 text-sm text-white disabled:opacity-45">{busy ? <Loader2 size={15} className="mr-2 inline animate-spin"/> : <Sparkles size={15} className="mr-2 inline"/>}{modelReady ? 'Перезагрузить локальный ИИ' : 'Загрузить локальный ИИ'}</button>
+          <button type="button" onClick={() => void clearLocalModelCache()} disabled={busy} className="mt-2 w-full rounded-xl border border-black/10 px-4 py-2 text-xs disabled:opacity-45"><Trash2 size={13} className="mr-1 inline"/>Очистить кэш локальной модели</button>
+          {!isWebGpuAvailable() && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">На этом браузере WebGPU не найден. Выбери облачный режим.</p>}
+        </div>}
         {progress && <p className="mt-3 break-words text-xs opacity-55">{progress}</p>}
       </div>
 
@@ -426,7 +517,7 @@ export default function LocalAiStoryDirector() {
 
     <details className="rounded-2xl border border-black/10 bg-white/65 p-4 text-xs">
       <summary className="cursor-pointer font-medium text-burgundy">Что именно ИИ делает и чего никогда не делает</summary>
-      <div className="mt-3 space-y-2 leading-relaxed opacity-65"><p>Читает только уже опубликованную последовательность и ищет слабые переходы. Учитывает плотность текста и медиа, временные разрывы, настроение и уже существующие главы/паузы.</p><p>Не меняет original_text/display_text, не удаляет существующие элементы и не публикует ничего сам.</p><p>Если модель не нужна или WebGPU недоступен, структурный fallback всё равно может найти места, где нужен воздух или глава.</p></div>
+      <div className="mt-3 space-y-2 leading-relaxed opacity-65"><p>Читает только уже опубликованную последовательность и ищет слабые переходы. Учитывает плотность текста и медиа, временные разрывы, настроение и уже существующие главы/паузы.</p><p>Не меняет original_text/display_text, не удаляет существующие элементы и не публикует ничего сам.</p><p>Облачный режим использует бесплатный маршрутизатор OpenRouter; доступность конкретных бесплатных моделей и лимиты определяет OpenRouter. Если сеть или лимит недоступны, можно выбрать локальный или структурный режим.</p></div>
     </details>
   </section>;
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Mic2, Music2, Play, Sparkles } from 'lucide-react';
 import { Frame, bgByZone } from '@/components/reader/StoryElement';
 import EffectsLayer from '@/components/reader/EffectsLayer';
 import DateStamp from '@/components/reader/DateStamp';
@@ -28,8 +28,17 @@ export interface StyleValue {
   backgroundOverlay?: number;
   externalMediaUrl?: string;
   externalMediaKind?: string;
+  audioPlayerStyle?: string;
   [key: string]: unknown;
 }
+
+export const AUDIO_PLAYER_STYLE_OPTIONS = [
+  { id: 'vinyl', label: 'Виниловая пластинка' },
+  { id: 'voice', label: 'Голосовое как в WhatsApp' },
+  { id: 'glass', label: 'Стеклянная карточка' },
+  { id: 'cassette', label: 'Кассета воспоминаний' },
+  { id: 'minimal', label: 'Минималистичный плеер' },
+] as const;
 
 const fontClassByOption: Record<string, string> = {
   serif: 'font-serif', script: 'font-script', sans: 'font-sans', pixel: 'font-pixel', mono: 'font-mono',
@@ -40,7 +49,21 @@ const fontClassByOption: Record<string, string> = {
 // Понятный на русском визуальный редактор JSON-поля `style` у элемента
 // хроники: рамка, эффекты, фон-зона и шрифт — с превью один в один как в
 // читалке (переиспользует те же компоненты Frame/EffectsLayer).
-export default function StyleEditor({ value, onChange, hasMedia = true }: { value: StyleValue; onChange: (next: StyleValue) => void; hasMedia?: boolean }) {
+export default function StyleEditor({
+  value,
+  onChange,
+  hasMedia = true,
+  mediaKind = null,
+  previewText = '',
+  previewTitle = '',
+}: {
+  value: StyleValue;
+  onChange: (next: StyleValue) => void;
+  hasMedia?: boolean;
+  mediaKind?: string | null;
+  previewText?: string | null;
+  previewTitle?: string | null;
+}) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [rawJson, setRawJson] = useState(() => JSON.stringify(value ?? {}, null, 2));
   const [rawError, setRawError] = useState('');
@@ -60,6 +83,9 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
   const backgroundImageUrl = typeof value.backgroundImageUrl === 'string' ? value.backgroundImageUrl : '';
   const backgroundPosition = typeof value.backgroundPosition === 'string' ? value.backgroundPosition : 'center';
   const backgroundOverlay = typeof value.backgroundOverlay === 'number' ? value.backgroundOverlay : 46;
+  const audioPlayerStyle = typeof value.audioPlayerStyle === 'string' ? value.audioPlayerStyle : mediaKind === 'audio' ? 'voice' : 'vinyl';
+  const actualPreviewText = previewText?.trim() || '';
+  const actualPreviewTitle = previewTitle?.trim() || '';
 
   function patch(next: Partial<StyleValue>) {
     const merged = { ...value, ...next };
@@ -90,6 +116,12 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
             {FRAME_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
           </select>
         </label>
+        {mediaKind === 'audio' && <label className="block text-xs sm:col-span-2">
+          <span className="opacity-60">Дизайн аудиоплеера</span>
+          <select value={audioPlayerStyle} onChange={(e) => patch({ audioPlayerStyle: e.target.value })} className="mt-1 w-full rounded-lg border p-2 text-sm">
+            {AUDIO_PLAYER_STYLE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+          </select>
+        </label>}
         <label className="block text-xs">
           <span className="opacity-60">Дизайн даты</span>
           <select value={dateStyle} onChange={(e) => patch({ dateStyle: e.target.value })} className="mt-1 w-full rounded-lg border p-2 text-sm">
@@ -186,13 +218,12 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
           <div className="w-full">
           <DateStamp date="3 марта 2024" time={value.hideTime ? null : '21:40'} variant={dateStyle as 'line' | 'centered' | 'ribbon' | 'handwritten' | 'capsule' | 'split'} align={dateAlign as 'left' | 'center' | 'right'} font={dateFont} dark />
           {hasMedia ? (
-            <Frame frame={frame}>
-              <div className="flex aspect-[4/5] w-full items-center justify-center bg-gradient-to-br from-blush to-peach p-4 text-center font-serif text-sm italic text-white">
-                фото / видео
-              </div>
-            </Frame>
+            <Frame frame={frame}><div className="space-y-3">
+              {mediaKind === 'audio' ? <AudioStylePreview styleId={audioPlayerStyle} title={actualPreviewTitle || 'Аудиозапись'} /> : <div className="flex aspect-[4/5] w-full items-center justify-center bg-gradient-to-br from-blush to-peach p-4 text-center font-serif text-sm italic text-white">{mediaKind === 'video' ? 'видео' : mediaKind === 'gif' ? 'выбранная GIF' : 'фото / медиа'}</div>}
+              {actualPreviewText && <p className={`relative z-10 whitespace-pre-wrap rounded-xl p-4 text-lg leading-relaxed ${textAlign === 'center' ? 'text-center' : textAlign === 'right' ? 'text-right' : 'text-left'} ${fontClassByOption[font] ?? 'font-serif'} ${lightFrame ? 'text-ink' : 'text-[#F4EFE6]'}`}>{actualPreviewText}</p>}
+            </div></Frame>
           ) : (
-            <Frame frame={frame}><p className={`relative z-10 max-w-[280px] rounded-xl p-4 text-lg leading-relaxed ${textAlign === 'center' ? 'text-center' : textAlign === 'right' ? 'text-right' : 'text-left'} ${fontClassByOption[font] ?? 'font-serif'} ${lightFrame ? 'text-ink' : 'text-[#F4EFE6]'}`}>Пример текста сообщения для превью оформления.</p></Frame>
+            <Frame frame={frame}><div className={`relative z-10 max-w-[280px] rounded-xl p-4 ${textAlign === 'center' ? 'text-center' : textAlign === 'right' ? 'text-right' : 'text-left'} ${lightFrame ? 'text-ink' : 'text-[#F4EFE6]'}`}>{actualPreviewTitle && <div className="mb-2 font-serif text-2xl">{actualPreviewTitle}</div>}<p className={`${fontClassByOption[font] ?? 'font-serif'} whitespace-pre-wrap text-lg leading-relaxed`}>{actualPreviewText || 'Начни вводить текст — он сразу появится здесь.'}</p></div></Frame>
           )}
           </div>
         </div>
@@ -212,4 +243,12 @@ export default function StyleEditor({ value, onChange, hasMedia = true }: { valu
       )}
     </div>
   );
+}
+
+function AudioStylePreview({ styleId, title }: { styleId: string; title: string }) {
+  if (styleId === 'voice') return <div className="rounded-2xl border border-[#b8dccd] bg-[#e7f5ee] p-4 text-[#173f31]"><div className="mb-3 flex items-center gap-2 text-[9px] uppercase tracking-[1.6px] text-[#25765a]/65"><Mic2 size={12}/> голосовое сообщение</div><div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#25765a] text-white"><Play size={15} fill="currentColor"/></span><div className="flex h-8 flex-1 items-center gap-1">{Array.from({ length: 22 }, (_, index) => <span key={index} className="flex-1 rounded-full bg-[#25765a]/25" style={{ height: 5 + ((index * 11) % 20) }}/>)}</div><span className="text-[9px] opacity-50">0:24</span></div><div className="mt-2 truncate text-xs font-medium">{title}</div></div>;
+  if (styleId === 'cassette') return <div className="rounded-2xl border-4 border-[#272229] bg-[#d6a761] p-3 text-[#211820]"><div className="rounded-lg bg-[#efe1bf] p-3"><div className="truncate font-mono text-xs font-bold">{title}</div><div className="mt-3 flex justify-center gap-8 rounded bg-[#2b242b] p-3"><span className="h-8 w-8 rounded-full border-4 border-white/25"/><span className="h-8 w-8 rounded-full border-4 border-white/25"/></div></div></div>;
+  if (styleId === 'minimal') return <div className="flex items-center gap-3 rounded-2xl bg-[#151318] p-4 text-white"><span className="flex h-11 w-11 items-center justify-center rounded-full border border-gold/25 text-gold"><Play size={15} fill="currentColor"/></span><div className="min-w-0 flex-1"><div className="truncate font-serif">{title}</div><div className="mt-2 h-1 rounded-full bg-white/10"><div className="h-full w-1/3 rounded-full bg-gold"/></div></div></div>;
+  if (styleId === 'glass') return <div className="rounded-2xl bg-gradient-to-br from-[#6e3653] to-[#17131d] p-4 text-white shadow-xl"><div className="flex items-center gap-3"><span className="flex h-14 w-14 items-center justify-center rounded-xl bg-white/10 text-gold"><Music2 size={22}/></span><div className="min-w-0"><div className="text-[8px] uppercase tracking-[1.6px] text-gold/65">атмосфера момента</div><div className="mt-1 truncate font-serif text-lg">{title}</div></div></div></div>;
+  return <div className="flex items-center gap-4 rounded-2xl bg-[#0d0b0f] p-4 text-white"><span className="vinyl-disc flex h-20 w-20 shrink-0 items-center justify-center rounded-full"><Music2 size={18} className="text-gold"/></span><div className="min-w-0"><div className="text-[8px] uppercase tracking-[1.8px] text-gold/60">сейчас играет</div><div className="mt-2 truncate font-serif text-xl">{title}</div></div></div>;
 }

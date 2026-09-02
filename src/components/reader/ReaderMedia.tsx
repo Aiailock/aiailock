@@ -3,7 +3,7 @@ import { AudioLines, FileText, Image as ImageIcon, Play } from 'lucide-react';
 import { fetchMediaUrl, peekMediaUrl, readerMediaInput } from '@/lib/readerApi';
 import type { PublicTimelineRow } from '@/lib/readerApi';
 import { safeRemoteUrl } from '@/lib/safeUrl';
-import VinylAudioPlayer from './VinylAudioPlayer';
+import VinylAudioPlayer, { type AudioPlayerStyle } from './VinylAudioPlayer';
 
 interface Props { row: PublicTimelineRow; token: string; }
 
@@ -47,6 +47,13 @@ export default function ReaderMedia({ row, token }: Props) {
   const kind = externalKind
     ?? row.media_kind
     ?? ((row.screenshot_id || row.memory_photo_storage_path) ? 'photo' : 'document');
+  const requestedAudioStyle = typeof row.style?.audioPlayerStyle === 'string' ? row.style.audioPlayerStyle : '';
+  const allowedAudioStyles: AudioPlayerStyle[] = ['vinyl', 'voice', 'glass', 'cassette', 'minimal'];
+  const audioVariant = allowedAudioStyles.includes(requestedAudioStyle as AudioPlayerStyle)
+    ? requestedAudioStyle as AudioPlayerStyle
+    : row.metadata?.audioPurpose === 'voice' || !row.metadata?.musicSource
+      ? 'voice'
+      : 'vinyl';
   return (
     <div ref={rootRef} className="story-media min-w-0 max-w-full">
       {error && <div className="rounded-2xl bg-black/5 p-8 text-center text-sm opacity-60">Медиа пока недоступно</div>}
@@ -70,6 +77,7 @@ export default function ReaderMedia({ row, token }: Props) {
           album={typeof row.metadata?.album === 'string' ? row.metadata.album : null}
           sourceUrl={typeof row.metadata?.sourceUrl === 'string' ? row.metadata.sourceUrl : null}
           isPreview={row.metadata?.musicSource === 'search'}
+          variant={audioVariant}
         />
       )}
       {url && kind === 'sticker' && <div className="flex justify-center rounded-2xl bg-white/40 p-6"><img src={url} alt="Стикер" loading="lazy" decoding="async" className="max-h-56 max-w-[70%] object-contain" /></div>}

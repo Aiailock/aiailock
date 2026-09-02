@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import AiControlPanel from "./AiControlPanel";
-import StyleEditor, { type StyleValue } from "./StyleEditor";
+import StyleEditor, { AUDIO_PLAYER_STYLE_OPTIONS, type StyleValue } from "./StyleEditor";
 import {
   DEFAULT_SPECIAL_MOMENT_LABEL,
   DEFAULT_TIME_FORMAT,
@@ -45,11 +45,13 @@ import AnalyticsPanel from "./AnalyticsPanel";
 import { ALIGN_OPTIONS, DATE_STYLE_OPTIONS, FONT_OPTIONS } from "@/lib/styleOptions";
 import QuickCreatePanel from "./QuickCreatePanel";
 import { safeRemoteUrl } from "@/lib/safeUrl";
-import { createManualAudio, createManualVideo } from "@/lib/manualMedia";
+import { createManualAudio, createManualVideo, isAudioFile, MAX_MANUAL_AUDIO_BYTES } from "@/lib/manualMedia";
 import SongSearch from "@/components/admin/SongSearch";
 import type { SongSearchResult } from "@/lib/songSearch";
 import SafetyPanel from "./SafetyPanel";
 import LocalAiStoryDirector from "./LocalAiStoryDirector";
+import VoiceRecorder from "@/components/admin/VoiceRecorder";
+import CommonsMediaSearch, { type CommonsAsset } from "@/components/admin/CommonsMediaSearch";
 
 interface ImportRow {
   id: string;
@@ -813,6 +815,7 @@ type InsertKind =
   | "quote"
   | "pause"
   | "gif"
+  | "voice"
   | "music"
   | "video"
   | "link"
@@ -837,6 +840,7 @@ const insertKindLabel: Record<InsertKind, string> = {
   quote: "Цитата",
   pause: "Пауза",
   gif: "GIF",
+  voice: "Голосовое",
   music: "Музыка",
   video: "Видео",
   link: "Ссылка",
@@ -893,6 +897,9 @@ interface InsertGapProps {
   insertMusicMode: "search" | "upload";
   insertSong: SongSearchResult | null;
   insertArtist: string;
+  insertFile: File | null;
+  insertGifAsset: CommonsAsset | null;
+  insertAudioStyle: string;
   insertBusy: boolean;
   insertError: string;
   onOpen: (prevId: string | null, nextId: string | null) => void;
@@ -905,6 +912,8 @@ interface InsertGapProps {
   onMusicModeChange: (v: "search" | "upload") => void;
   onSongChange: (song: SongSearchResult | null) => void;
   onArtistChange: (v: string) => void;
+  onGifAssetChange: (asset: CommonsAsset) => void;
+  onAudioStyleChange: (v: string) => void;
   onCoverFileChange: (f: File | null) => void;
   onFileChange: (f: File | null) => void;
   onSubmit: () => void;
@@ -922,6 +931,9 @@ function InsertGap({
   insertMusicMode,
   insertSong,
   insertArtist,
+  insertFile,
+  insertGifAsset,
+  insertAudioStyle,
   insertBusy,
   insertError,
   onOpen,
@@ -934,6 +946,8 @@ function InsertGap({
   onMusicModeChange,
   onSongChange,
   onArtistChange,
+  onGifAssetChange,
+  onAudioStyleChange,
   onCoverFileChange,
   onFileChange,
   onSubmit,
@@ -955,7 +969,7 @@ function InsertGap({
       </div>
     );
   const hasTitle = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "pause" && !(insertKind === "music" && insertMusicMode === "search");
-  const hasPhoto = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "chapter" && insertKind !== "quote" && insertKind !== "pause" && insertKind !== "video" && insertKind !== "link" && insertKind !== "music";
+  const hasPhoto = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "chapter" && insertKind !== "quote" && insertKind !== "pause" && insertKind !== "video" && insertKind !== "link" && insertKind !== "music" && insertKind !== "voice" && insertKind !== "gif";
   return (
     <div className="my-2 rounded-2xl border border-dashed border-burgundy/25 bg-[#FBF3EE] p-3">
       {!insertKind ? (
@@ -972,7 +986,7 @@ function InsertGap({
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
             {(
-              ["message", "chapter", "quote", "pause", "gif", "music", "video", "link", "special", "memory", "screenshot"] as InsertKind[]
+              ["message", "chapter", "quote", "pause", "gif", "voice", "music", "video", "link", "special", "memory", "screenshot"] as InsertKind[]
             ).map((k) => (
               <button
                 key={k}
@@ -1087,6 +1101,30 @@ function InsertGap({
               )}
             </div>
           )}
+          {insertKind === "voice" && (
+            <VoiceRecorder value={insertFile} disabled={insertBusy} onChange={onFileChange} />
+          )}
+          {(insertKind === "voice" || insertKind === "music") && (
+            <label className="block text-xs opacity-60">
+              Вид аудиоплеера
+              <select value={insertAudioStyle} onChange={(event) => onAudioStyleChange(event.target.value)} className="mt-1 w-full rounded-lg border p-2 text-sm">
+                {AUDIO_PLAYER_STYLE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+              </select>
+            </label>
+          )}
+          {insertKind === "gif" && (
+            <div className="space-y-2">
+              <CommonsMediaSearch kind="gif" value={insertGifAsset} onChange={onGifAssetChange} />
+              <label className="block text-xs opacity-60">
+                Или прямая ссылка на GIF
+                <input value={insertUrl} inputMode="url" onChange={(event) => onUrlChange(event.target.value)} placeholder="https://…/animation.gif" className="mt-1 w-full rounded-lg border p-2 text-sm" />
+              </label>
+              <label className="block text-xs opacity-60">
+                Или загрузить GIF-файл
+                <input type="file" accept="image/gif,.gif" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} className="mt-1 block w-full rounded-lg border border-dashed p-2 text-xs" />
+              </label>
+            </div>
+          )}
           {(insertKind === "screenshot" || insertKind === "video") && (
             <input
               type="file"
@@ -1135,6 +1173,8 @@ function InsertGap({
                     ? "Подпись к видео (необязательно)"
                   : insertKind === "music"
                     ? "Почему эта песня здесь? (необязательно)"
+                  : insertKind === "voice"
+                    ? "Подпись к голосовому (необязательно)"
                   : insertKind === "link"
                     ? "Описание перехода (необязательно)"
                   : interactionKinds.has(insertKind)
@@ -1198,6 +1238,8 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   const [insertArtist, setInsertArtist] = useState("");
   const [insertFile, setInsertFile] = useState<File | null>(null);
   const [insertCoverFile, setInsertCoverFile] = useState<File | null>(null);
+  const [insertGifAsset, setInsertGifAsset] = useState<CommonsAsset | null>(null);
+  const [insertAudioStyle, setInsertAudioStyle] = useState("vinyl");
   const [insertBusy, setInsertBusy] = useState(false);
   const [insertError, setInsertError] = useState("");
   // Воспоминания/особые моменты и скриншоты, вставленные через «+» (или
@@ -1598,6 +1640,8 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     setInsertArtist("");
     setInsertFile(null);
     setInsertCoverFile(null);
+    setInsertGifAsset(null);
+    setInsertAudioStyle("vinyl");
     setInsertError("");
   }
   async function submitInsert() {
@@ -1613,7 +1657,17 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
       setInsertBusy(true);
       const id = crypto.randomUUID();
       let createdTimelineElementId: string | null = null;
-      if (insertKind === "music") {
+      if (insertKind === "voice") {
+        if (!insertFile) throw new Error("Запиши голосовое или выбери аудиофайл.");
+        createdTimelineElementId = await createManualAudio({
+          file: insertFile,
+          title: insertTitle || "Голосовое сообщение",
+          caption: insertBody,
+          occurredAt: at,
+          audioPurpose: "voice",
+          style: { zone: "default", frame: "minimal", spacing: "normal", audioPlayerStyle: insertAudioStyle || "voice" },
+        });
+      } else if (insertKind === "music") {
         if (insertMusicMode === "search") {
           if (!insertSong) throw new Error("Найди и выбери песню.");
           const previewUrl = safeRemoteUrl(insertSong.previewUrl);
@@ -1629,6 +1683,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
               spacing: "cinematic",
               externalMediaUrl: previewUrl,
               externalMediaKind: "audio",
+              audioPlayerStyle: insertAudioStyle || "vinyl",
             },
             is_published: true,
             metadata: {
@@ -1654,7 +1709,8 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
             artist: insertArtist,
             caption: insertBody,
             occurredAt: at,
-            style: { zone: "night", frame: "minimal", spacing: "cinematic" },
+            audioPurpose: "music",
+            style: { zone: "night", frame: "minimal", spacing: "cinematic", audioPlayerStyle: insertAudioStyle || "vinyl" },
           });
         }
       } else if (insertKind === "video") {
@@ -1769,7 +1825,8 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
       } else {
         if (insertKind !== "gif" && !insertBody.trim())
           throw new Error("Напиши текст момента/воспоминания.");
-        if (insertKind === "gif" && !insertFile) throw new Error("Выбери GIF-файл.");
+        const externalGifUrl = insertKind === "gif" ? safeRemoteUrl(insertUrl) : null;
+        if (insertKind === "gif" && !insertFile && !externalGifUrl) throw new Error("Выбери GIF из поиска, вставь ссылку или загрузи файл.");
         let photoPath: string | null = null;
         if (insertFile) {
           const safe = insertFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -1786,12 +1843,23 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
           insertKind === "special"
             ? { kind: "special" }
             : insertKind === "gif"
-              ? { kind: "gif" }
+              ? {
+                  kind: "gif",
+                  sourceUrl: insertGifAsset?.sourceUrl ?? null,
+                  sourceTitle: insertGifAsset?.title ?? null,
+                  sourceProvider: insertGifAsset ? "Wikimedia Commons" : null,
+                }
             : interactive
               ? { kind: "interactive", interaction: insertKind, options: ["Да", "Очень"], results: [insertBody.trim(), insertBody.trim()] }
               : {};
         const style = insertKind === "gif"
-          ? { zone: "gif", frame: "minimal", spacing: "cinematic", hideText: !insertBody.trim() }
+          ? {
+              zone: "gif",
+              frame: "minimal",
+              spacing: "cinematic",
+              hideText: !insertBody.trim(),
+              ...(externalGifUrl ? { externalMediaUrl: externalGifUrl, externalMediaKind: "gif" } : {}),
+            }
           : interactive
           ? {
               zone: insertKind === "letter" ? "sepia" : "romantic",
@@ -1816,7 +1884,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
         ? "message_id"
         : insertKind === "screenshot"
           ? "screenshot_id"
-          : (["quote", "pause", "chapter", "music", "video", "link"] as InsertKind[]).includes(insertKind)
+          : (["quote", "pause", "chapter", "voice", "music", "video", "link"] as InsertKind[]).includes(insertKind)
             ? null
             : "memory_id";
       let timelineElementId = createdTimelineElementId ?? id;
@@ -1937,6 +2005,8 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                 value={bulkStyle}
                 onChange={setBulkStyle}
                 hasMedia={false}
+                previewTitle="Общее оформление"
+                previewText={`Выбрано элементов: ${selected.size}`}
               />
               <button
                 disabled={bulkBusy || Object.keys(bulkStyle).length === 0}
@@ -1969,11 +2039,14 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
           insertMusicMode={insertMusicMode}
           insertSong={insertSong}
           insertArtist={insertArtist}
+          insertFile={insertFile}
+          insertGifAsset={insertGifAsset}
+          insertAudioStyle={insertAudioStyle}
           insertBusy={insertBusy}
           insertError={insertError}
           onOpen={openInsert}
           onClose={() => setInsertGap(null)}
-          onPickKind={setInsertKind}
+          onPickKind={(kind) => { setInsertKind(kind); if (kind === "voice") setInsertAudioStyle("voice"); }}
           onTitleChange={setInsertTitle}
           onBodyChange={setInsertBody}
           onUrlChange={setInsertUrl}
@@ -1986,6 +2059,8 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
           }}
           onSongChange={setInsertSong}
           onArtistChange={setInsertArtist}
+          onGifAssetChange={(asset) => { setInsertGifAsset(asset); setInsertUrl(asset.url); }}
+          onAudioStyleChange={setInsertAudioStyle}
           onCoverFileChange={setInsertCoverFile}
           onFileChange={setInsertFile}
           onSubmit={() => void submitInsert()}
@@ -2349,6 +2424,9 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                       value={styleValue}
                       onChange={setStyleValue}
                       hasMedia={hasMedia}
+                      mediaKind={row.type === "audio" ? "audio" : row.type === "video" ? "video" : hasMedia ? "image" : undefined}
+                      previewTitle={String(memMap.get(row.memory_id ?? "")?.title ?? shotMap.get(row.screenshot_id ?? "")?.title ?? row.metadata?.title ?? "")}
+                      previewText={String(m?.display_text ?? m?.original_text ?? memMap.get(row.memory_id ?? "")?.body ?? shotMap.get(row.screenshot_id ?? "")?.caption ?? shotMap.get(row.screenshot_id ?? "")?.description ?? row.metadata?.quote ?? row.metadata?.text ?? row.metadata?.body ?? row.metadata?.subtitle ?? "")}
                     />
                     <button
                       onClick={() => void saveStyle(row)}
@@ -2373,11 +2451,14 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                 insertMusicMode={insertMusicMode}
                 insertSong={insertSong}
                 insertArtist={insertArtist}
+                insertFile={insertFile}
+                insertGifAsset={insertGifAsset}
+                insertAudioStyle={insertAudioStyle}
                 insertBusy={insertBusy}
                 insertError={insertError}
                 onOpen={openInsert}
                 onClose={() => setInsertGap(null)}
-                onPickKind={setInsertKind}
+                onPickKind={(kind) => { setInsertKind(kind); if (kind === "voice") setInsertAudioStyle("voice"); }}
                 onTitleChange={setInsertTitle}
                 onBodyChange={setInsertBody}
                 onUrlChange={setInsertUrl}
@@ -2390,6 +2471,8 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                 }}
                 onSongChange={setInsertSong}
                 onArtistChange={setInsertArtist}
+                onGifAssetChange={(asset) => { setInsertGifAsset(asset); setInsertUrl(asset.url); }}
+                onAudioStyleChange={setInsertAudioStyle}
                 onCoverFileChange={setInsertCoverFile}
                 onFileChange={setInsertFile}
                 onSubmit={() => void submitInsert()}
@@ -2618,6 +2701,9 @@ function MemoriesPanel({ specialOnly }: { specialOnly: boolean }) {
             value={form.style}
             onChange={(v) => setForm({ ...form, style: v })}
             hasMedia={Boolean(form.photo)}
+            mediaKind={form.photo ? "image" : undefined}
+            previewTitle={form.title}
+            previewText={form.body}
           />
         </div>
         <div className="mt-4 flex gap-2">
@@ -2922,6 +3008,9 @@ function ScreenshotsPanel() {
             value={form.style}
             onChange={(v) => setForm({ ...form, style: v })}
             hasMedia
+            mediaKind="image"
+            previewTitle={form.title}
+            previewText={form.caption || form.description}
           />
         </div>
         <div className="mt-4 flex gap-2">
@@ -3097,6 +3186,11 @@ function SettingsPanel() {
   const [loaderSubtitle, setLoaderSubtitle] = useState("Немного подожди — я бережно собираю всё по страницам.");
   const [loaderStyle, setLoaderStyle] = useState("hearts");
   const [motionMode, setMotionMode] = useState("auto");
+  const [backgroundMusicMode, setBackgroundMusicMode] = useState("built_in");
+  const [backgroundMusicPath, setBackgroundMusicPath] = useState("");
+  const [backgroundMusicTitle, setBackgroundMusicTitle] = useState("Тихое сияние");
+  const [backgroundMusicVolume, setBackgroundMusicVolume] = useState(0.22);
+  const [backgroundMusicFile, setBackgroundMusicFile] = useState<File | null>(null);
   useEffect(() => {
     supabase
       .from("history_settings")
@@ -3138,6 +3232,10 @@ function SettingsPanel() {
           if (typeof theme.loaderSubtitle === "string") setLoaderSubtitle(theme.loaderSubtitle);
           if (["hearts", "sparkles", "minimal"].includes(String(theme.loaderStyle))) setLoaderStyle(String(theme.loaderStyle));
           if (["auto", "full", "lite"].includes(String(theme.motionMode))) setMotionMode(String(theme.motionMode));
+          if (["built_in", "custom", "off"].includes(String(theme.backgroundMusicMode))) setBackgroundMusicMode(String(theme.backgroundMusicMode));
+          if (typeof theme.backgroundMusicPath === "string") setBackgroundMusicPath(theme.backgroundMusicPath);
+          if (typeof theme.backgroundMusicTitle === "string") setBackgroundMusicTitle(theme.backgroundMusicTitle);
+          if (Number.isFinite(Number(theme.backgroundMusicVolume))) setBackgroundMusicVolume(Math.max(0.04, Math.min(0.65, Number(theme.backgroundMusicVolume))));
         }
       });
   }, []);
@@ -3148,6 +3246,15 @@ function SettingsPanel() {
       if (coverBackgroundUrl.trim() && !safeRemoteUrl(coverBackgroundUrl))
         throw new Error("Фон обложки должен быть полной ссылкой https://…");
       let parsed: Record<string, unknown> = JSON.parse(advanced || "{}");
+      let nextBackgroundMusicPath = backgroundMusicPath;
+      if (backgroundMusicFile) {
+        if (!isAudioFile(backgroundMusicFile) || backgroundMusicFile.size > MAX_MANUAL_AUDIO_BYTES) throw new Error("Фоновая музыка должна быть аудиофайлом не больше 25 МБ.");
+        const safeName = backgroundMusicFile.name.replace(/[^a-zA-Z0-9._-]/g, "_") || "background.mp3";
+        nextBackgroundMusicPath = `background/${crypto.randomUUID()}-${safeName}`;
+        const { error: uploadError } = await supabase.storage.from("audio").upload(nextBackgroundMusicPath, backgroundMusicFile, { contentType: backgroundMusicFile.type || "audio/mpeg", cacheControl: "3600" });
+        if (uploadError) throw uploadError;
+      }
+      if (backgroundMusicMode === "custom" && !nextBackgroundMusicPath) throw new Error("Выбери файл для своей фоновой музыки.");
       parsed = {
         ...parsed,
         ...colors,
@@ -3166,6 +3273,10 @@ function SettingsPanel() {
         loaderSubtitle: loaderSubtitle.trim() || "Немного подожди — я бережно собираю всё по страницам.",
         loaderStyle,
         motionMode,
+        backgroundMusicMode,
+        backgroundMusicPath: nextBackgroundMusicPath,
+        backgroundMusicTitle: backgroundMusicTitle.trim() || "Фоновая музыка",
+        backgroundMusicVolume,
       };
       const { error } = await supabase.rpc("update_history_settings", {
         p_reader_title: title,
@@ -3182,6 +3293,8 @@ function SettingsPanel() {
       setPassword("");
       setInitialPasswordEnabled(passwordEnabled);
       setAdvanced(JSON.stringify(parsed, null, 2));
+      setBackgroundMusicPath(nextBackgroundMusicPath);
+      setBackgroundMusicFile(null);
       setMessage("Настройки сохранены.");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Ошибка сохранения.");
@@ -3277,6 +3390,28 @@ function SettingsPanel() {
           <label className="text-xs">Плавность на телефоне<select value={motionMode} onChange={(event) => setMotionMode(event.target.value)} className="mt-2 w-full rounded-xl border p-3 text-sm"><option value="auto">Автоматически — рекомендуется</option><option value="full">Все эффекты</option><option value="lite">Облегчённый режим</option></select></label>
         </div>
         <p className="mt-2 text-[11px] opacity-45">Автоматический режим сам убирает тяжёлые эффекты на слабом телефоне или при экономии трафика.</p>
+      </div>
+      <div className="mt-5 rounded-2xl border border-black/5 bg-[#FBF8F5] p-4">
+        <div className="flex items-center gap-2 text-sm font-medium text-burgundy"><Music2 size={16}/> Фоновая музыка</div>
+        <p className="mt-1 text-xs opacity-45">Играет по кругу после первого касания страницы. Когда она включает голосовое, музыку или видео, фон автоматически становится почти неслышным.</p>
+        <label className="mt-3 block text-xs">Источник
+          <select value={backgroundMusicMode} onChange={(event) => setBackgroundMusicMode(event.target.value)} className="mt-2 w-full rounded-xl border p-3 text-sm">
+            <option value="built_in">Встроенная — «Тихое сияние»</option>
+            <option value="custom">Загрузить свою музыку</option>
+            <option value="off">Не использовать фоновую музыку</option>
+          </select>
+        </label>
+        {backgroundMusicMode !== "off" && <>
+          <input value={backgroundMusicTitle} onChange={(event) => setBackgroundMusicTitle(event.target.value)} placeholder="Название фоновой музыки" className="mt-3 w-full rounded-xl border p-3 text-sm" />
+          <label className="mt-3 block text-xs">Громкость фона: {Math.round(backgroundMusicVolume * 100)}%
+            <input type="range" min="4" max="65" value={Math.round(backgroundMusicVolume * 100)} onChange={(event) => setBackgroundMusicVolume(Number(event.target.value) / 100)} className="mt-2 w-full" />
+          </label>
+        </>}
+        {backgroundMusicMode === "custom" && <label className="mt-3 block text-xs">Аудиофайл до 25 МБ
+          <input type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.flac,.webm" onChange={(event) => { setBackgroundMusicFile(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} className="mt-2 block w-full rounded-xl border border-dashed p-3 text-xs" />
+          <span className="mt-2 block opacity-45">{backgroundMusicFile ? `Выбран новый файл: ${backgroundMusicFile.name}` : backgroundMusicPath ? "Своя музыка уже загружена. Новый файл заменит её после сохранения." : "Файл ещё не выбран."}</span>
+        </label>}
+        <p className="mt-3 text-[10px] opacity-40">У читателя всегда есть кнопка музыки в правом верхнем углу — отключить или включить её можно в любой момент.</p>
       </div>
       <div className="mt-5">
         <div className="text-sm">Палитра reader</div>

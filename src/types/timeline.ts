@@ -77,6 +77,7 @@ export interface ElementStyle {
   backgroundOverlay?: number;
   externalMediaUrl?: string;
   externalMediaKind?: 'image' | 'gif' | 'video' | 'audio';
+  audioPlayerStyle?: 'vinyl' | 'voice' | 'glass' | 'cassette' | 'minimal';
 }
 
 export type TimelineElementType =

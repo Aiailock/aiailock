@@ -15,6 +15,7 @@ export type TimeFormatId = 'default' | '12h' | 'short' | 'relative' | 'weekday';
 export type DateStyleId = 'line' | 'centered' | 'ribbon' | 'handwritten' | 'capsule' | 'split';
 export type LoaderStyleId = 'hearts' | 'sparkles' | 'minimal';
 export type MotionModeId = 'auto' | 'full' | 'lite';
+export type BackgroundMusicModeId = 'built_in' | 'custom' | 'off';
 
 export const TIME_FORMAT_OPTIONS: { id: TimeFormatId; label: string; hint: string }[] = [
   { id: 'default', label: 'Обычный', hint: '3 марта 2024 · 21:40' },
@@ -42,6 +43,10 @@ export interface ReaderDisplaySettings {
   loaderSubtitle: string;
   loaderStyle: LoaderStyleId;
   motionMode: MotionModeId;
+  backgroundMusicMode: BackgroundMusicModeId;
+  backgroundMusicPath: string;
+  backgroundMusicTitle: string;
+  backgroundMusicVolume: number;
 }
 
 export const ReaderSettingsContext = createContext<ReaderDisplaySettings>({
@@ -59,6 +64,10 @@ export const ReaderSettingsContext = createContext<ReaderDisplaySettings>({
   loaderSubtitle: 'Немного подожди — я бережно собираю всё по страницам.',
   loaderStyle: 'hearts',
   motionMode: 'auto',
+  backgroundMusicMode: 'built_in',
+  backgroundMusicPath: '',
+  backgroundMusicTitle: 'Тихое сияние',
+  backgroundMusicVolume: 0.22,
 });
 
 export function useReaderSettings() {
@@ -84,7 +93,12 @@ export function readDisplaySettingsFromTheme(theme: Record<string, unknown> | un
   const loaderSubtitle = typeof theme?.loaderSubtitle === 'string' && theme.loaderSubtitle.trim() ? theme.loaderSubtitle.trim() : 'Немного подожди — я бережно собираю всё по страницам.';
   const loaderStyle = theme?.loaderStyle === 'sparkles' || theme?.loaderStyle === 'minimal' ? theme.loaderStyle : 'hearts';
   const motionMode = theme?.motionMode === 'full' || theme?.motionMode === 'lite' ? theme.motionMode : 'auto';
-  return { specialMomentLabel: label, timeFormat, readerFont, dateStyle, dateAlign, dateFont, hideTime, coverSubtitle, closingMessage, coverBackgroundUrl, loaderTitle, loaderSubtitle, loaderStyle, motionMode };
+  const backgroundMusicMode = theme?.backgroundMusicMode === 'off' || theme?.backgroundMusicMode === 'custom' ? theme.backgroundMusicMode : 'built_in';
+  const backgroundMusicPath = typeof theme?.backgroundMusicPath === 'string' ? theme.backgroundMusicPath.trim() : '';
+  const backgroundMusicTitle = typeof theme?.backgroundMusicTitle === 'string' && theme.backgroundMusicTitle.trim() ? theme.backgroundMusicTitle.trim() : 'Тихое сияние';
+  const rawBackgroundVolume = Number(theme?.backgroundMusicVolume ?? 0.22);
+  const backgroundMusicVolume = Number.isFinite(rawBackgroundVolume) ? Math.max(0.04, Math.min(0.65, rawBackgroundVolume)) : 0.22;
+  return { specialMomentLabel: label, timeFormat, readerFont, dateStyle, dateAlign, dateFont, hideTime, coverSubtitle, closingMessage, coverBackgroundUrl, loaderTitle, loaderSubtitle, loaderStyle, motionMode, backgroundMusicMode, backgroundMusicPath, backgroundMusicTitle, backgroundMusicVolume };
 }
 
 export function prefersLiteReaderMotion(mode: MotionModeId): boolean {

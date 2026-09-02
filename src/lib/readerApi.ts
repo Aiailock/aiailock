@@ -13,6 +13,13 @@ export interface PublicTimelineCursor {
   id: string;
 }
 
+export interface PublicChapterSummary {
+  elementId: string;
+  displayOrder: number;
+  storyPosition: number;
+  title: string;
+}
+
 export interface PublicTimelineRow {
   element_id: string;
   type: string;
@@ -95,6 +102,8 @@ export async function fetchPublicTimeline(cursor: PublicTimelineCursor | null, t
   elements: PublicTimelineRow[];
   hasMore: boolean;
   nextCursor: PublicTimelineCursor | null;
+  chapters: PublicChapterSummary[];
+  total: number | null;
 }> {
   const { data, error } = await supabase.functions.invoke('public-timeline', {
     body: { cursor, previewBatchId: activeAiPreviewBatchId() },
@@ -105,6 +114,8 @@ export async function fetchPublicTimeline(cursor: PublicTimelineCursor | null, t
     elements: (data?.elements ?? []) as PublicTimelineRow[],
     hasMore: Boolean(data?.hasMore),
     nextCursor: data?.nextCursor ?? null,
+    chapters: (data?.chapters ?? []) as PublicChapterSummary[],
+    total: typeof data?.total === 'number' ? data.total : null,
   };
 }
 
@@ -117,6 +128,8 @@ export async function fetchResumeTimeline(elementId: string, token: string): Pro
   elements: PublicTimelineRow[];
   hasMore: boolean;
   nextCursor: PublicTimelineCursor | null;
+  chapters: PublicChapterSummary[];
+  total: number | null;
 }> {
   const { data, error } = await supabase.functions.invoke('public-timeline', {
     body: { resumeElementId: elementId, previewBatchId: activeAiPreviewBatchId() },
@@ -127,6 +140,8 @@ export async function fetchResumeTimeline(elementId: string, token: string): Pro
     elements: (data?.elements ?? []) as PublicTimelineRow[],
     hasMore: Boolean(data?.hasMore),
     nextCursor: data?.nextCursor ?? null,
+    chapters: (data?.chapters ?? []) as PublicChapterSummary[],
+    total: typeof data?.total === 'number' ? data.total : null,
   };
 }
 
@@ -291,6 +306,15 @@ export async function fetchMediaUrl(input: ReaderMediaInput, token: string): Pro
 
   mediaUrlRequests.set(key, request);
   return request;
+}
+
+export async function fetchBackgroundMusicUrl(token: string): Promise<string> {
+  const { data, error } = await supabase.functions.invoke('get-media-url', {
+    body: { backgroundMusic: true },
+    headers: token ? { 'x-reader-access-token': token } : undefined,
+  });
+  if (error || data?.error || !data?.url) throw new Error(error?.message ?? data?.error ?? 'Фоновая музыка недоступна.');
+  return String(data.url);
 }
 
 function warmImage(url: string): Promise<void> {

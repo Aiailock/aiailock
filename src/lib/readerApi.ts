@@ -1,5 +1,11 @@
 import { supabase } from './supabaseClient';
 
+function activeAiPreviewBatchId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const value = new URLSearchParams(window.location.search).get('aiBatch');
+  return value && /^[0-9a-f-]{36}$/i.test(value) ? value : null;
+}
+
 export interface PublicTimelineCursor {
   displayOrder: number;
   occurredAt: string;
@@ -91,7 +97,7 @@ export async function fetchPublicTimeline(cursor: PublicTimelineCursor | null, t
   nextCursor: PublicTimelineCursor | null;
 }> {
   const { data, error } = await supabase.functions.invoke('public-timeline', {
-    body: { cursor },
+    body: { cursor, previewBatchId: activeAiPreviewBatchId() },
     headers: token ? { 'x-reader-access-token': token } : undefined,
   });
   if (error || data?.error) throw new Error(error?.message ?? data?.error ?? 'Не удалось загрузить историю.');
@@ -113,7 +119,7 @@ export async function fetchResumeTimeline(elementId: string, token: string): Pro
   nextCursor: PublicTimelineCursor | null;
 }> {
   const { data, error } = await supabase.functions.invoke('public-timeline', {
-    body: { resumeElementId: elementId },
+    body: { resumeElementId: elementId, previewBatchId: activeAiPreviewBatchId() },
     headers: token ? { 'x-reader-access-token': token } : undefined,
   });
   if (error || data?.error) throw new Error(error?.message ?? data?.error ?? 'Не удалось продолжить историю.');

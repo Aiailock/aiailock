@@ -49,6 +49,7 @@ import { createManualAudio, createManualVideo } from "@/lib/manualMedia";
 import SongSearch from "@/components/admin/SongSearch";
 import type { SongSearchResult } from "@/lib/songSearch";
 import SafetyPanel from "./SafetyPanel";
+import LocalAiStoryDirector from "./LocalAiStoryDirector";
 
 interface ImportRow {
   id: string;
@@ -139,6 +140,7 @@ type Tab =
   | "screenshots"
   | "media"
   | "ai"
+  | "director"
   | "settings"
   | "preview";
 const tabs: Array<[Tab, string]> = [
@@ -153,13 +155,14 @@ const tabs: Array<[Tab, string]> = [
   ["media", "Медиа"],
   ["import", "Импорт"],
   ["ai", "ИИ"],
+  ["director", "ИИ-режиссёр"],
   ["settings", "Настройки"],
   ["preview", "Preview"],
 ];
 const tabIcons: Record<Tab, typeof BarChart3> = {
   dashboard: BarChart3, create: Plus, analytics: Activity, safety: ShieldCheck, timeline: CheckSquare2, memories: Star,
   special: Sparkles, screenshots: ImagePlus, media: Images, import: FileArchive,
-  ai: Sparkles, settings: Settings2, preview: Eye,
+  ai: Sparkles, director: Sparkles, settings: Settings2, preview: Eye,
 };
 const themeDefaults: Record<string, string> = {
   cream: "#FBF3EE",
@@ -243,6 +246,7 @@ export default function AdminDashboard() {
         {tab === "screenshots" && <ScreenshotsPanel />}
         {tab === "media" && <MediaPanel />}
         {tab === "ai" && <AiControlPanel />}
+        {tab === "director" && <LocalAiStoryDirector />}
         {tab === "settings" && <SettingsPanel />}
         {tab === "preview" && <PreviewPanel />}
         </main>

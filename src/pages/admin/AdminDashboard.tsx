@@ -20,6 +20,7 @@ import {
   Images,
   Link2,
   LogOut,
+  Menu,
   Music2,
   Plus,
   RefreshCw,
@@ -52,6 +53,7 @@ import SafetyPanel from "./SafetyPanel";
 import LocalAiStoryDirector from "./LocalAiStoryDirector";
 import VoiceRecorder from "@/components/admin/VoiceRecorder";
 import CommonsMediaSearch, { type CommonsAsset } from "@/components/admin/CommonsMediaSearch";
+import { downloadRemoteGif, MAX_GIF_BYTES } from "@/lib/remoteMedia";
 
 interface ImportRow {
   id: string;
@@ -166,6 +168,20 @@ const tabIcons: Record<Tab, typeof BarChart3> = {
   special: Sparkles, screenshots: ImagePlus, media: Images, import: FileArchive,
   ai: Sparkles, director: Sparkles, settings: Settings2, preview: Eye,
 };
+const navGroups: Array<{ label: string; items: Tab[] }> = [
+  { label: "Главное", items: ["dashboard", "create", "timeline", "preview"] },
+  { label: "Контент", items: ["memories", "special", "screenshots", "media", "import"] },
+  { label: "Умные инструменты", items: ["ai", "director"] },
+  { label: "Контроль", items: ["analytics", "safety", "settings"] },
+];
+const mobilePrimaryTabs: Tab[] = ["dashboard", "create", "timeline", "analytics"];
+const tabLabel = (id: Tab) => tabs.find(([tab]) => tab === id)?.[1] ?? id;
+function initialAdminTab(): Tab {
+  const fromHash = window.location.hash.replace(/^#admin-/, '') as Tab;
+  if (tabs.some(([id]) => id === fromHash)) return fromHash;
+  const saved = localStorage.getItem('for-you-admin-tab') as Tab | null;
+  return saved && tabs.some(([id]) => id === saved) ? saved : 'dashboard';
+}
 const themeDefaults: Record<string, string> = {
   cream: "#FBF3EE",
   blush: "#F2C9C2",
@@ -194,7 +210,8 @@ function localDateTime(value: string) {
 }
 
 export default function AdminDashboard() {
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const [tab, setTab] = useState<Tab>(initialAdminTab);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -218,27 +235,33 @@ export default function AdminDashboard() {
     );
     setRefreshKey((x) => x + 1);
   }
+  function openTab(next: Tab) {
+    setTab(next);
+    setMobileMenuOpen(false);
+    localStorage.setItem('for-you-admin-tab', next);
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#admin-${next}`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
   return (
     <div className="admin-shell min-h-screen bg-[#f5eee9] font-sans text-ink md:grid md:grid-cols-[232px_minmax(0,1fr)]">
       <aside className="sticky top-0 hidden h-screen flex-col border-r border-white/10 bg-gradient-to-b from-[#351523] to-[#1f1118] p-4 text-white md:flex">
         <div className="rounded-2xl border border-white/10 bg-white/[.06] p-4"><div className="font-pixel text-[10px] text-gold">FOR YOU</div><div className="mt-2 font-serif text-2xl">Мастерская истории</div><div className="mt-2 truncate text-[11px] text-white/40">{userEmail}</div></div>
-        <nav className="mt-5 min-h-0 flex-1 space-y-1 overflow-y-auto" aria-label="Админ разделы">{tabs.map(([id, label]) => { const Icon = tabIcons[id]; return <button key={id} onClick={() => setTab(id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${tab === id ? "bg-white text-burgundy shadow-lg" : "text-white/65 hover:bg-white/10 hover:text-white"}`}><Icon size={16} /><span>{label}</span></button>; })}</nav>
+        <nav className="mt-5 min-h-0 flex-1 space-y-4 overflow-y-auto" aria-label="Админ разделы">{navGroups.map((group) => <div key={group.label}><div className="mb-1 px-3 text-[9px] uppercase tracking-[1.8px] text-white/30">{group.label}</div><div className="space-y-1">{group.items.map((id) => { const Icon = tabIcons[id]; return <button key={id} onClick={() => openTab(id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${tab === id ? "bg-white text-burgundy shadow-lg" : "text-white/65 hover:bg-white/10 hover:text-white"}`}><Icon size={16} /><span>{tabLabel(id)}</span></button>; })}</div></div>)}</nav>
         <div className="mt-4 space-y-2"><button onClick={() => void rebuildSpecials()} disabled={busy} className="w-full rounded-xl border border-white/10 px-3 py-2 text-xs text-white/70 hover:bg-white/10"><RefreshCw size={14} className={`mr-1 inline ${busy ? "animate-spin" : ""}`} />Синхронизировать</button><button onClick={() => void logout()} className="w-full rounded-xl px-3 py-2 text-xs text-white/45 hover:bg-white/10"><LogOut size={14} className="mr-1 inline" />Выйти</button></div>
       </aside>
       <div className="min-w-0">
         <header className="sticky top-0 z-30 border-b border-black/10 bg-[#f5eee9]/92 shadow-sm backdrop-blur-xl md:hidden">
-          <div className="flex items-center justify-between gap-3 px-4 py-3"><div><div className="font-pixel text-[9px] text-burgundy">FOR YOU / ADMIN</div><div className="mt-1 max-w-[150px] truncate text-[10px] opacity-45">{userEmail}</div></div><div className="flex gap-1"><button aria-label="Синхронизировать" onClick={() => void rebuildSpecials()} disabled={busy} className="rounded-xl border border-black/10 bg-white/70 p-2"><RefreshCw size={15} className={busy ? "animate-spin" : ""} /></button><button aria-label="Выйти" onClick={() => void logout()} className="rounded-xl border border-black/10 p-2"><LogOut size={15} /></button></div></div>
-          <nav className="flex gap-1 overflow-x-auto px-3 pb-2" aria-label="Админ разделы">{tabs.map(([id, label]) => { const Icon = tabIcons[id]; return <button key={id} onClick={() => setTab(id)} className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 text-xs transition ${tab === id ? "bg-burgundy text-white shadow-sm" : "bg-white/40"}`}><Icon size={13} />{label}</button>; })}</nav>
+          <div className="flex items-center justify-between gap-3 px-4 py-3"><button type="button" aria-label="Открыть все разделы" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)} className="flex min-w-0 items-center gap-3 text-left"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-burgundy text-white"><Menu size={18}/></span><span className="min-w-0"><span className="block font-pixel text-[8px] text-burgundy/50">FOR YOU / ADMIN</span><span className="mt-0.5 block truncate font-serif text-xl text-burgundy">{tabLabel(tab)}</span></span></button><div className="flex gap-1"><button aria-label="Синхронизировать" onClick={() => void rebuildSpecials()} disabled={busy} className="rounded-xl border border-black/10 bg-white/70 p-2.5"><RefreshCw size={16} className={busy ? "animate-spin" : ""} /></button><button aria-label="Открыть Reader" onClick={() => openTab('preview')} className="rounded-xl border border-black/10 bg-white/70 p-2.5"><Eye size={16}/></button></div></div>
         </header>
-        <div className="mx-auto hidden max-w-[1500px] items-center justify-between px-7 pb-0 pt-6 md:flex"><div><div className="text-[10px] uppercase tracking-[2px] text-burgundy/40">раздел</div><div className="mt-1 font-serif text-2xl text-burgundy">{tabs.find(([id]) => id === tab)?.[1]}</div></div><button onClick={() => setTab("preview")} className="rounded-xl border border-black/10 bg-white/60 px-4 py-2 text-xs"><Eye size={14} className="mr-1 inline" />Посмотреть reader</button></div>
+        <div className="mx-auto hidden max-w-[1500px] items-center justify-between px-7 pb-0 pt-6 md:flex"><div><div className="text-[10px] uppercase tracking-[2px] text-burgundy/40">раздел</div><div className="mt-1 font-serif text-2xl text-burgundy">{tabLabel(tab)}</div></div><button onClick={() => openTab("preview")} className="rounded-xl border border-black/10 bg-white/60 px-4 py-2 text-xs"><Eye size={14} className="mr-1 inline" />Посмотреть reader</button></div>
         {notice && <div className="mx-auto mt-4 max-w-[1500px] px-4 md:px-7"><div className="rounded-xl border border-black/10 bg-white/75 p-3 text-sm shadow-sm">{notice}</div></div>}
         <main className="mx-auto max-w-[1500px] px-4 pb-24 pt-5 md:px-7 md:py-6">
         {tab === "dashboard" && (
-          <DashboardPanel onTab={setTab} refreshKey={refreshKey} />
+          <DashboardPanel onTab={openTab} refreshKey={refreshKey} />
         )}
         {tab === "analytics" && <AnalyticsPanel />}
         {tab === "safety" && <SafetyPanel />}
-        {tab === "create" && <QuickCreatePanel onCreated={() => setRefreshKey((x) => x + 1)} onOpenTimeline={() => setTab("timeline")} />}
+        {tab === "create" && <QuickCreatePanel onCreated={() => setRefreshKey((x) => x + 1)} onOpenTimeline={() => openTab("timeline")} />}
         {tab === "import" && (
           <ImportPanel onDone={() => setRefreshKey((x) => x + 1)} />
         )}
@@ -252,7 +275,8 @@ export default function AdminDashboard() {
         {tab === "settings" && <SettingsPanel />}
         {tab === "preview" && <PreviewPanel />}
         </main>
-        {tab !== "create" && <button type="button" onClick={() => setTab("create")} className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-burgundy px-5 py-3 text-sm text-white shadow-2xl md:hidden"><Plus size={17} />Добавить</button>}
+        {mobileMenuOpen && <div className="fixed inset-0 z-50 md:hidden"><button type="button" aria-label="Закрыть меню" onClick={() => setMobileMenuOpen(false)} className="absolute inset-0 bg-black/45 backdrop-blur-sm"/><div className="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-[30px] bg-[#f5eee9] px-4 pb-[calc(24px+env(safe-area-inset-bottom))] pt-4 shadow-2xl"><div className="mb-4 flex items-center justify-between"><div><div className="font-serif text-2xl text-burgundy">Все разделы</div><div className="mt-0.5 max-w-[240px] truncate text-[10px] opacity-40">{userEmail}</div></div><button type="button" onClick={() => setMobileMenuOpen(false)} className="rounded-xl border bg-white p-2.5"><X size={18}/></button></div>{navGroups.map((group) => <div key={group.label} className="mb-4"><div className="mb-2 text-[9px] uppercase tracking-[1.8px] text-burgundy/40">{group.label}</div><div className="grid grid-cols-2 gap-2">{group.items.map((id) => { const Icon = tabIcons[id]; return <button type="button" key={id} onClick={() => openTab(id)} className={`flex min-h-14 items-center gap-2 rounded-2xl border p-3 text-left text-sm ${tab === id ? 'border-burgundy bg-burgundy text-white' : 'border-black/8 bg-white/75 text-burgundy'}`}><Icon size={16}/><span>{tabLabel(id)}</span></button>; })}</div></div>)}<div className="grid grid-cols-2 gap-2 border-t border-black/8 pt-4"><button type="button" onClick={() => void rebuildSpecials()} className="rounded-2xl border bg-white/75 p-3 text-xs"><RefreshCw size={14} className="mr-1 inline"/>Синхронизация</button><button type="button" onClick={() => void logout()} className="rounded-2xl border bg-white/75 p-3 text-xs text-red-700"><LogOut size={14} className="mr-1 inline"/>Выйти</button></div></div></div>}
+        <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-black/10 bg-[#f5eee9]/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_35px_-24px_rgba(0,0,0,.65)] backdrop-blur-xl md:hidden" aria-label="Основная мобильная навигация">{mobilePrimaryTabs.map((id) => { const Icon = tabIcons[id]; return <button type="button" key={id} onClick={() => openTab(id)} className={`flex min-h-16 flex-col items-center justify-center gap-1 text-[9px] ${tab === id ? 'text-burgundy' : 'text-ink/45'}`}><span className={`flex h-8 w-8 items-center justify-center rounded-xl ${tab === id ? 'bg-burgundy text-white shadow' : ''}`}><Icon size={16}/></span>{tabLabel(id)}</button>; })}<button type="button" onClick={() => setMobileMenuOpen(true)} className={`flex min-h-16 flex-col items-center justify-center gap-1 text-[9px] ${!mobilePrimaryTabs.includes(tab) ? 'text-burgundy' : 'text-ink/45'}`}><span className={`flex h-8 w-8 items-center justify-center rounded-xl ${!mobilePrimaryTabs.includes(tab) ? 'bg-burgundy text-white shadow' : ''}`}><Menu size={16}/></span>Ещё</button></nav>
       </div>
     </div>
   );
@@ -360,7 +384,7 @@ function DashboardPanel({
         <div className="text-[11px] uppercase tracking-[3px] text-white/55">
           digital story control room
         </div>
-        <h1 className="mt-2 font-serif text-5xl">
+        <h1 className="mt-2 font-serif text-4xl sm:text-5xl">
           История, которая продолжается.
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/70">
@@ -894,7 +918,7 @@ interface InsertGapProps {
   insertBody: string;
   insertUrl: string;
   insertLinkMode: "external" | "preview";
-  insertMusicMode: "search" | "upload";
+  insertMusicMode: "upload" | "url";
   insertSong: SongSearchResult | null;
   insertArtist: string;
   insertFile: File | null;
@@ -909,7 +933,7 @@ interface InsertGapProps {
   onBodyChange: (v: string) => void;
   onUrlChange: (v: string) => void;
   onLinkModeChange: (v: "external" | "preview") => void;
-  onMusicModeChange: (v: "search" | "upload") => void;
+  onMusicModeChange: (v: "upload" | "url") => void;
   onSongChange: (song: SongSearchResult | null) => void;
   onArtistChange: (v: string) => void;
   onGifAssetChange: (asset: CommonsAsset) => void;
@@ -968,7 +992,7 @@ function InsertGap({
         </button>
       </div>
     );
-  const hasTitle = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "pause" && !(insertKind === "music" && insertMusicMode === "search");
+  const hasTitle = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "pause";
   const hasPhoto = insertKind !== "screenshot" && insertKind !== "message" && insertKind !== "chapter" && insertKind !== "quote" && insertKind !== "pause" && insertKind !== "video" && insertKind !== "link" && insertKind !== "music" && insertKind !== "voice" && insertKind !== "gif";
   return (
     <div className="my-2 rounded-2xl border border-dashed border-burgundy/25 bg-[#FBF3EE] p-3">
@@ -1053,28 +1077,28 @@ function InsertGap({
           )}
           {insertKind === "music" && (
             <div className="space-y-3 rounded-xl border border-burgundy/10 bg-white/70 p-3">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900"><b>В историю добавляется полный трек.</b> Каталожный 30‑секундный отрывок используется только для поиска и не сохраняется.</div>
+              <SongSearch metadataOnly value={insertSong} onChange={onSongChange} />
               <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => onMusicModeChange("search")}
-                  className={`rounded-lg border px-3 py-2 text-xs ${insertMusicMode === "search" ? "border-burgundy bg-burgundy text-white" : "border-black/10 bg-white"}`}
-                >
-                  <Music2 size={13} className="mr-1 inline" />Найти песню
-                </button>
                 <button
                   type="button"
                   onClick={() => onMusicModeChange("upload")}
                   className={`rounded-lg border px-3 py-2 text-xs ${insertMusicMode === "upload" ? "border-burgundy bg-burgundy text-white" : "border-black/10 bg-white"}`}
                 >
-                  Загрузить аудио
+                  <Music2 size={13} className="mr-1 inline" />Загрузить трек
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onMusicModeChange("url")}
+                  className={`rounded-lg border px-3 py-2 text-xs ${insertMusicMode === "url" ? "border-burgundy bg-burgundy text-white" : "border-black/10 bg-white"}`}
+                >
+                  Ссылка на аудио
                 </button>
               </div>
-              {insertMusicMode === "search" ? (
-                <SongSearch value={insertSong} onChange={onSongChange} />
-              ) : (
+              {insertMusicMode === "upload" ? (
                 <div className="space-y-2">
                   <label className="block text-xs opacity-60">
-                    Аудиофайл · до 25 МБ
+                    Полный аудиофайл · до 60 МБ
                     <input
                       type="file"
                       accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.flac,.webm"
@@ -1098,7 +1122,7 @@ function InsertGap({
                     />
                   </label>
                 </div>
-              )}
+              ) : <label className="block text-xs opacity-60">Прямая ссылка на полный MP3/M4A/OGG<input value={insertUrl} inputMode="url" onChange={(event) => onUrlChange(event.target.value)} placeholder="https://…/full-track.mp3" className="mt-1 w-full rounded-lg border p-2 text-sm"/><span className="mt-1 block text-[10px] opacity-55">Нужна ссылка на сам аудиофайл, не на страницу Spotify/Apple Music.</span></label>}
             </div>
           )}
           {insertKind === "voice" && (
@@ -1233,7 +1257,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
   const [insertBody, setInsertBody] = useState("");
   const [insertUrl, setInsertUrl] = useState("");
   const [insertLinkMode, setInsertLinkMode] = useState<"external" | "preview">("external");
-  const [insertMusicMode, setInsertMusicMode] = useState<"search" | "upload">("search");
+  const [insertMusicMode, setInsertMusicMode] = useState<"upload" | "url">("upload");
   const [insertSong, setInsertSong] = useState<SongSearchResult | null>(null);
   const [insertArtist, setInsertArtist] = useState("");
   const [insertFile, setInsertFile] = useState<File | null>(null);
@@ -1466,6 +1490,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
             artist: externalForm.artist.trim() || null,
             album: externalForm.album.trim() || null,
             coverUrl: safeRemoteUrl(externalForm.coverUrl),
+            musicSource: "full-url",
           }
         : { ...(row.metadata ?? {}), title: externalForm.title.trim() || null, body: externalForm.body.trim() || null };
     const payload = row.type === "link"
@@ -1474,6 +1499,38 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     const { error } = await supabase.from("timeline_elements").update(payload).eq("id", row.id);
     if (error) window.alert(error.message);
     else { setExternalEditing(null); await load(); }
+  }
+  async function replaceGif(row: TimelineRow, supplied?: File | null) {
+    if (!row.memory_id) return;
+    const memory = memMap.get(row.memory_id);
+    const remoteUrl = safeRemoteUrl(row.style?.externalMediaUrl);
+    if (!supplied && !remoteUrl) {
+      window.alert('У этой GIF-сцены нет рабочей ссылки. Нажми «Загрузить GIF» и выбери файл с телефона.');
+      return;
+    }
+    setBusyId(row.id);
+    let newPath: string | null = null;
+    try {
+      const file = supplied ?? await downloadRemoteGif(remoteUrl, String(memory?.title || 'animation'));
+      if (!/image\/gif/i.test(file.type) && !/\.gif$/i.test(file.name)) throw new Error('Выбери именно GIF-файл.');
+      if (file.size > MAX_GIF_BYTES) throw new Error('GIF должен быть не больше 20 МБ.');
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_') || 'animation.gif';
+      newPath = `manual/gif/${row.memory_id}/${crypto.randomUUID()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage.from('screenshots').upload(newPath, file, { contentType: 'image/gif', cacheControl: '3600' });
+      if (uploadError) throw uploadError;
+      const nextStyle = { ...(row.style ?? {}) };
+      delete nextStyle.externalMediaUrl;
+      delete nextStyle.externalMediaKind;
+      const { error } = await supabase.from('memories').update({ photo_storage_path: newPath, style: nextStyle }).eq('id', row.memory_id);
+      if (error) throw error;
+      if (memory?.photo_storage_path && memory.photo_storage_path !== newPath) await supabase.storage.from('screenshots').remove([memory.photo_storage_path]);
+      await load();
+    } catch (error) {
+      if (newPath) await supabase.storage.from('screenshots').remove([newPath]);
+      window.alert(error instanceof Error ? error.message : 'Не удалось заменить GIF.');
+    } finally {
+      setBusyId(null);
+    }
   }
   async function toggle(row: TimelineRow) {
     const { error } = await supabase
@@ -1635,7 +1692,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
     setInsertBody("");
     setInsertUrl("");
     setInsertLinkMode("external");
-    setInsertMusicMode("search");
+    setInsertMusicMode("upload");
     setInsertSong(null);
     setInsertArtist("");
     setInsertFile(null);
@@ -1668,10 +1725,11 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
           style: { zone: "default", frame: "minimal", spacing: "normal", audioPlayerStyle: insertAudioStyle || "voice" },
         });
       } else if (insertKind === "music") {
-        if (insertMusicMode === "search") {
-          if (!insertSong) throw new Error("Найди и выбери песню.");
-          const previewUrl = safeRemoteUrl(insertSong.previewUrl);
-          if (!previewUrl) throw new Error("У этой песни нет доступного аудиопревью.");
+        const resolvedTitle = insertSong?.title || insertTitle;
+        const resolvedArtist = insertSong?.artist || insertArtist;
+        if (insertMusicMode === "url") {
+          const fullUrl = safeRemoteUrl(insertUrl);
+          if (!fullUrl) throw new Error("Вставь прямую ссылку на полный аудиофайл.");
           const { error } = await supabase.from("timeline_elements").insert({
             id,
             type: "audio",
@@ -1681,21 +1739,21 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
               zone: "night",
               frame: "minimal",
               spacing: "cinematic",
-              externalMediaUrl: previewUrl,
+              externalMediaUrl: fullUrl,
               externalMediaKind: "audio",
               audioPlayerStyle: insertAudioStyle || "vinyl",
             },
             is_published: true,
             metadata: {
-              title: insertSong.title,
-              artist: insertSong.artist,
-              album: insertSong.album || null,
-              coverUrl: safeRemoteUrl(insertSong.artworkUrl),
-              sourceUrl: safeRemoteUrl(insertSong.sourceUrl),
-              genre: insertSong.genre || null,
-              durationMs: insertSong.durationMs,
+              title: resolvedTitle.trim() || "Музыка",
+              artist: resolvedArtist.trim() || null,
+              album: insertSong?.album || null,
+              coverUrl: safeRemoteUrl(insertSong?.artworkUrl),
+              sourceUrl: safeRemoteUrl(insertSong?.sourceUrl),
+              genre: insertSong?.genre || null,
+              durationMs: insertSong?.durationMs ?? null,
               body: insertBody.trim() || null,
-              musicSource: "search",
+              musicSource: "full-url",
             },
           });
           if (error) throw error;
@@ -1705,8 +1763,11 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
           createdTimelineElementId = await createManualAudio({
             file: insertFile,
             coverFile: insertCoverFile,
-            title: insertTitle,
-            artist: insertArtist,
+            coverUrl: safeRemoteUrl(insertSong?.artworkUrl),
+            sourceUrl: safeRemoteUrl(insertSong?.sourceUrl),
+            title: resolvedTitle,
+            artist: resolvedArtist,
+            album: insertSong?.album,
             caption: insertBody,
             occurredAt: at,
             audioPurpose: "music",
@@ -1828,13 +1889,18 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
         const externalGifUrl = insertKind === "gif" ? safeRemoteUrl(insertUrl) : null;
         if (insertKind === "gif" && !insertFile && !externalGifUrl) throw new Error("Выбери GIF из поиска, вставь ссылку или загрузи файл.");
         let photoPath: string | null = null;
-        if (insertFile) {
-          const safe = insertFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const remoteGifFile = insertKind === "gif" && !insertFile && externalGifUrl
+          ? await downloadRemoteGif(externalGifUrl, insertGifAsset?.title || insertTitle || "animation")
+          : null;
+        const storedFile = insertFile ?? remoteGifFile;
+        if (storedFile) {
+          if (storedFile.size > MAX_GIF_BYTES && insertKind === "gif") throw new Error("GIF должен быть не больше 20 МБ.");
+          const safe = storedFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
           photoPath = `manual/memories/${id}/${safe}`;
           const { error: upError } = await supabase.storage
             .from("screenshots")
-            .upload(photoPath, insertFile, {
-              contentType: insertFile.type || "image/jpeg",
+            .upload(photoPath, storedFile, {
+              contentType: storedFile.type || "image/jpeg",
             });
           if (upError) throw upError;
         }
@@ -1850,7 +1916,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                   sourceProvider: insertGifAsset ? "Wikimedia Commons" : null,
                 }
             : interactive
-              ? { kind: "interactive", interaction: insertKind, options: ["Да", "Очень"], results: [insertBody.trim(), insertBody.trim()] }
+              ? { kind: "interactive", interaction: insertKind, options: ["Да", "Конечно", "Очень", "Расскажу позже"], results: [insertBody.trim(), insertBody.trim(), insertBody.trim(), insertBody.trim()] }
               : {};
         const style = insertKind === "gif"
           ? {
@@ -1858,7 +1924,6 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
               frame: "minimal",
               spacing: "cinematic",
               hideText: !insertBody.trim(),
-              ...(externalGifUrl ? { externalMediaUrl: externalGifUrl, externalMediaKind: "gif" } : {}),
             }
           : interactive
           ? {
@@ -1954,7 +2019,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
         </span>
       </div>
       {selected.size > 0 && (
-        <div className="sticky top-[108px] z-20 mt-3 rounded-2xl border border-burgundy/10 bg-white/95 p-3 shadow-xl backdrop-blur">
+        <div className="sticky top-[76px] z-20 mt-3 rounded-2xl border border-burgundy/10 bg-white/95 p-3 shadow-xl backdrop-blur md:top-4">
           <div className="flex flex-wrap gap-2">
             <button
               disabled={bulkBusy}
@@ -2407,6 +2472,10 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                   >
                     {row.is_published ? "Скрыть" : "Опубликовать"}
                   </button>
+                  {row.type === 'gif' && <>
+                    {safeRemoteUrl(row.style?.externalMediaUrl) && <button type="button" disabled={busyId === row.id} onClick={() => void replaceGif(row)} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Сохранить GIF надёжно</button>}
+                    <label className="cursor-pointer rounded-lg border border-burgundy/15 bg-white px-3 py-2 text-xs text-burgundy">Загрузить GIF<input type="file" accept="image/gif,.gif" className="sr-only" onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ''; if (file) void replaceGif(row, file); }}/></label>
+                  </>}
                   <button
                     disabled={bulkBusy}
                     onClick={() => void deleteElements([row.id])}
@@ -3248,7 +3317,7 @@ function SettingsPanel() {
       let parsed: Record<string, unknown> = JSON.parse(advanced || "{}");
       let nextBackgroundMusicPath = backgroundMusicPath;
       if (backgroundMusicFile) {
-        if (!isAudioFile(backgroundMusicFile) || backgroundMusicFile.size > MAX_MANUAL_AUDIO_BYTES) throw new Error("Фоновая музыка должна быть аудиофайлом не больше 25 МБ.");
+        if (!isAudioFile(backgroundMusicFile) || backgroundMusicFile.size > MAX_MANUAL_AUDIO_BYTES) throw new Error("Фоновая музыка должна быть аудиофайлом не больше 60 МБ.");
         const safeName = backgroundMusicFile.name.replace(/[^a-zA-Z0-9._-]/g, "_") || "background.mp3";
         nextBackgroundMusicPath = `background/${crypto.randomUUID()}-${safeName}`;
         const { error: uploadError } = await supabase.storage.from("audio").upload(nextBackgroundMusicPath, backgroundMusicFile, { contentType: backgroundMusicFile.type || "audio/mpeg", cacheControl: "3600" });
@@ -3407,7 +3476,7 @@ function SettingsPanel() {
             <input type="range" min="4" max="65" value={Math.round(backgroundMusicVolume * 100)} onChange={(event) => setBackgroundMusicVolume(Number(event.target.value) / 100)} className="mt-2 w-full" />
           </label>
         </>}
-        {backgroundMusicMode === "custom" && <label className="mt-3 block text-xs">Аудиофайл до 25 МБ
+        {backgroundMusicMode === "custom" && <label className="mt-3 block text-xs">Аудиофайл до 60 МБ
           <input type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.flac,.webm" onChange={(event) => { setBackgroundMusicFile(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} className="mt-2 block w-full rounded-xl border border-dashed p-3 text-xs" />
           <span className="mt-2 block opacity-45">{backgroundMusicFile ? `Выбран новый файл: ${backgroundMusicFile.name}` : backgroundMusicPath ? "Своя музыка уже загружена. Новый файл заменит её после сохранения." : "Файл ещё не выбран."}</span>
         </label>}

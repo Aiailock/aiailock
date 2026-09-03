@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity, BookOpenCheck, CheckCircle2, Clock3, Cpu, Globe2, Heart,
-  MonitorSmartphone, RefreshCw, Smartphone, Trash2, Wifi,
+  MessageCircleQuestion, MonitorSmartphone, RefreshCw, Smartphone, Trash2, Wifi,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -51,6 +51,14 @@ interface ReactionRow {
   id: string;
   emoji: string;
   note: string | null;
+  updated_at: string;
+  element_id: string;
+}
+
+interface AnswerRow {
+  id: string;
+  answer_index: number;
+  answer_value: string;
   updated_at: string;
   element_id: string;
 }
@@ -164,6 +172,7 @@ export default function AnalyticsPanel() {
   const [visitors, setVisitors] = useState<VisitorRow[]>([]);
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [reactions, setReactions] = useState<ReactionRow[]>([]);
+  const [answers, setAnswers] = useState<AnswerRow[]>([]);
   const [points, setPoints] = useState<Record<string, StoryPointRow>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -173,10 +182,11 @@ export default function AnalyticsPanel() {
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
-    const [visitorResult, visitResult, reactionResult] = await Promise.all([
+    const [visitorResult, visitResult, reactionResult, answerResult] = await Promise.all([
       supabase.from('reader_visitors').select('visitor_id,first_seen_at,last_seen_at,visit_count,last_element_id,last_element_at,last_element_type,last_element_label,last_element_preview,last_chapter,max_position,max_progress,completed_at,user_agent,viewport_width,device_info,country_code').order('last_seen_at', { ascending: false }),
       supabase.from('reader_visits').select('id,visitor_id,opened_at,last_seen_at,last_element_id,last_element_at,last_element_type,last_element_label,last_element_preview,last_chapter,max_position,max_progress,completed_at,user_agent,viewport_width,device_info,country_code').order('opened_at', { ascending: false }).limit(100),
       supabase.from('reader_reactions').select('id,emoji,note,updated_at,element_id').order('updated_at', { ascending: false }).limit(100),
+      supabase.from('reader_interaction_answers').select('id,answer_index,answer_value,updated_at,element_id').order('updated_at', { ascending: false }).limit(100),
     ]);
     const issue = visitorResult.error ?? visitResult.error ?? reactionResult.error;
     if (issue) {
@@ -187,14 +197,20 @@ export default function AnalyticsPanel() {
     const nextVisitors = (visitorResult.data ?? []) as VisitorRow[];
     const nextVisits = (visitResult.data ?? []) as VisitRow[];
     const nextReactions = (reactionResult.data ?? []) as ReactionRow[];
+    const nextAnswers = answerResult.error ? [] : (answerResult.data ?? []) as AnswerRow[];
     setVisitors(nextVisitors);
     setVisits(nextVisits);
     setReactions(nextReactions);
+    setAnswers(nextAnswers);
+    if (answerResult.error) {
+      setError('Ответы на вопросы появятся после применения миграции 0022. Остальная аналитика уже доступна.');
+    }
 
     const ids = Array.from(new Set([
       ...nextVisitors.map((row) => row.last_element_id),
       ...nextVisits.map((row) => row.last_element_id),
       ...nextReactions.map((row) => row.element_id),
+      ...nextAnswers.map((row) => row.element_id),
     ].filter((value): value is string => Boolean(value))));
     if (ids.length) {
       const pointResult = await supabase.from('admin_reader_story_points')
@@ -243,18 +259,19 @@ export default function AnalyticsPanel() {
     {showClear && <div className="rounded-[24px] border border-red-200 bg-red-50 p-5 text-red-950 shadow-sm">
       <div className="font-serif text-2xl">Очистить статистику чтения?</div>
       <p className="mt-1 text-sm text-red-950/65">Будут удалены все открытия, список устройств, прогресс и последняя прочитанная точка. История, фото и настройки не изменятся.</p>
-      <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl bg-white/70 p-3 text-sm"><input type="checkbox" checked={includeReactions} onChange={(event) => setIncludeReactions(event.target.checked)} className="h-4 w-4 accent-burgundy" /><span>Также удалить все реакции и написанные мнения</span></label>
+      <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl bg-white/70 p-3 text-sm"><input type="checkbox" checked={includeReactions} onChange={(event) => setIncludeReactions(event.target.checked)} className="h-4 w-4 accent-burgundy" /><span>Также удалить все реакции, мнения и ответы на вопросы</span></label>
       <div className="mt-4 flex flex-wrap gap-2"><button type="button" disabled={clearing} onClick={() => void clearAnalytics()} className="rounded-xl bg-red-800 px-4 py-2.5 text-xs font-medium text-white disabled:opacity-50">{clearing ? 'Очищаю…' : 'Да, очистить'}</button><button type="button" disabled={clearing} onClick={() => setShowClear(false)} className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-xs">Отмена</button></div>
     </div>}
 
-    {error && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Примени миграцию 0017 и заново опубликуй функцию reader-analytics. {error}</div>}
+    {error && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Примени все новые миграции и заново опубликуй Edge Functions по инструкции. {error}</div>}
 
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
       <Stat icon={Activity} label="Статус" value={summary.last ? 'Да, заходила' : 'Пока нет'} hint={summary.last ? `Последний раз: ${when(summary.last.last_seen_at)}` : 'Открытий ещё не было'} />
       <Stat icon={Clock3} label="Открытия" value={String(summary.visits)} hint={`${visitors.length} ${visitors.length === 1 ? 'устройство' : 'устройств'}`} />
       <Stat icon={BookOpenCheck} label="Дочитано" value={`${summary.progress}%`} hint={summary.last ? `До элемента №${summary.last.max_position}` : 'Пока нет данных'} />
       <Stat icon={CheckCircle2} label="Финал" value={summary.completed ? 'Дочитала' : 'Ещё нет'} hint={summary.completed ? 'История была пройдена до конца' : 'Последняя точка ещё не достигнута'} />
       <Stat icon={Heart} label="Мнения" value={String(reactions.length)} hint={reactions[0] ? `Последнее: ${reactions[0].emoji} · ${when(reactions[0].updated_at)}` : 'Реакций пока нет'} />
+      <Stat icon={MessageCircleQuestion} label="Ответы" value={String(answers.length)} hint={answers[0] ? `Последний: ${answers[0].answer_value}` : 'Ответов пока нет'} />
     </div>
 
     {summary.last && <div className="rounded-[26px] border border-black/5 bg-[#F6EFE0] p-6">
@@ -290,6 +307,8 @@ export default function AnalyticsPanel() {
     </div>
 
     {reactions.length > 0 && <div className="rounded-[26px] border border-black/5 bg-white/85 p-5 shadow-sm"><div className="flex items-center gap-2"><Heart size={17} className="text-burgundy/55" /><h2 className="font-serif text-2xl text-burgundy">Её реакции и мнение</h2></div><div className="mt-4 grid gap-2 sm:grid-cols-2">{reactions.slice(0, 60).map((reaction) => { const point = points[reaction.element_id]; return <div key={reaction.id} className="min-w-0 rounded-2xl border border-burgundy/10 bg-[#FBF8F5] px-4 py-3"><div><span className="text-xl">{reaction.emoji}</span><span className="ml-2 text-[10px] opacity-45">{when(reaction.updated_at)}</span></div>{reaction.note && <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-burgundy">«{reaction.note}»</p>}<div className="mt-3 border-t border-burgundy/5 pt-3"><PointSummary compact point={point} label="Элемент истории" position={point?.story_position ?? 0} occurredAt={point?.occurred_at} /></div></div>; })}</div></div>}
+
+    {answers.length > 0 && <div className="rounded-[26px] border border-black/5 bg-white/85 p-5 shadow-sm"><div className="flex items-center gap-2"><MessageCircleQuestion size={18} className="text-burgundy/55"/><h2 className="font-serif text-2xl text-burgundy">Ответы на вопросы</h2></div><p className="mt-1 text-xs opacity-45">Здесь видно, какой из четырёх вариантов она выбрала.</p><div className="mt-4 grid gap-2 sm:grid-cols-2">{answers.map((answer) => { const point = points[answer.element_id]; return <article key={answer.id} className="rounded-2xl border border-gold/20 bg-gradient-to-br from-[#fffaf3] to-[#F6EFE0] p-4"><div className="flex items-center justify-between gap-2"><span className="rounded-full bg-burgundy px-3 py-1 text-[10px] text-white">вариант {answer.answer_index + 1}</span><span className="text-[10px] opacity-40">{when(answer.updated_at)}</span></div><div className="mt-3 font-serif text-xl text-burgundy">{answer.answer_value}</div><div className="mt-3 border-t border-burgundy/5 pt-3"><PointSummary compact point={point} label="Вопрос" position={point?.story_position ?? 0}/></div></article>; })}</div></div>}
 
     <div className="rounded-[26px] border border-black/5 bg-white/85 p-5 shadow-sm">
       <div className="flex items-center gap-2"><Smartphone size={17} className="text-burgundy/55" /><h2 className="font-serif text-2xl text-burgundy">Последние открытия</h2></div>

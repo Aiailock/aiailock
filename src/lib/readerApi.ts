@@ -264,6 +264,28 @@ export async function recordReaderReaction(input: {
   return { emoji: String(data.emoji), count: Number(data.count ?? 1) };
 }
 
+export function getOrCreateReaderVisitorId(): string {
+  const key = 'for-you-reader-id';
+  let value = localStorage.getItem(key);
+  if (!value || !/^[0-9a-f-]{36}$/i.test(value)) {
+    value = crypto.randomUUID();
+    localStorage.setItem(key, value);
+  }
+  return value;
+}
+
+export async function recordReaderInteractionAnswer(input: {
+  visitorId: string;
+  elementId: string;
+  answerIndex: number;
+}, token: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('reader-interaction', {
+    body: input,
+    headers: { 'x-reader-access-token': token },
+  });
+  if (error || data?.error) throw new Error(error?.message ?? data?.error ?? 'Не удалось сохранить ответ.');
+}
+
 export type ReaderMediaInput = { mediaId?: string; screenshotId?: string; memoryId?: string };
 export interface ReaderMediaUrl { url: string; thumbnailUrl: string | null }
 

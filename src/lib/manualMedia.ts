@@ -1,7 +1,7 @@
 import { supabase } from './supabaseClient';
 
 export const MAX_MANUAL_VIDEO_BYTES = 200 * 1024 * 1024;
-export const MAX_MANUAL_AUDIO_BYTES = 25 * 1024 * 1024;
+export const MAX_MANUAL_AUDIO_BYTES = 60 * 1024 * 1024;
 export const MAX_AUDIO_COVER_BYTES = 5 * 1024 * 1024;
 
 export function isAudioFile(file: File): boolean {
@@ -21,6 +21,8 @@ interface ManualVideoInput {
 interface ManualAudioInput {
   file: File;
   coverFile?: File | null;
+  coverUrl?: string | null;
+  sourceUrl?: string | null;
   title?: string;
   artist?: string;
   album?: string;
@@ -124,7 +126,7 @@ export async function createManualVideo(input: ManualVideoInput): Promise<string
 /** Uploads an owner-provided track and optional square cover privately. */
 export async function createManualAudio(input: ManualAudioInput): Promise<string> {
   if (!isAudioFile(input.file)) throw new Error('Выбери аудиофайл.');
-  if (input.file.size > MAX_MANUAL_AUDIO_BYTES) throw new Error('Аудиофайл должен быть не больше 25 МБ.');
+  if (input.file.size > MAX_MANUAL_AUDIO_BYTES) throw new Error('Аудиофайл должен быть не больше 60 МБ.');
   if (input.coverFile && (!input.coverFile.type.startsWith('image/') || input.coverFile.size > MAX_AUDIO_COVER_BYTES)) {
     throw new Error('Обложка должна быть изображением не больше 5 МБ.');
   }
@@ -202,6 +204,8 @@ export async function createManualAudio(input: ManualAudioInput): Promise<string
         title,
         artist: input.artist?.trim() || null,
         album: input.album?.trim() || null,
+        coverUrl: input.coverUrl || null,
+        sourceUrl: input.sourceUrl || null,
         musicSource: 'upload',
         audioPurpose: input.audioPurpose ?? 'music',
       },

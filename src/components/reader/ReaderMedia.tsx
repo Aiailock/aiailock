@@ -56,10 +56,10 @@ export default function ReaderMedia({ row, token }: Props) {
       : 'vinyl';
   return (
     <div ref={rootRef} className="story-media min-w-0 max-w-full">
-      {error && <div className="rounded-2xl bg-black/5 p-8 text-center text-sm opacity-60">Медиа пока недоступно</div>}
+      {error && <div className="rounded-2xl border border-white/10 bg-black/10 p-8 text-center text-sm opacity-70">{kind === 'gif' ? 'Эта GIF пока недоступна — её можно заменить в админке' : 'Медиа пока недоступно'}</div>}
       {!error && !url && <div className="flex min-h-48 items-center justify-center rounded-2xl bg-black/5 text-sm opacity-35">Загружается…</div>}
-      {url && (kind === 'photo' || kind === 'image' || kind === 'gif' || (row.screenshot_id && !externalKind)) && (
-        <img src={url} alt={row.screenshot_title ?? row.screenshot_description ?? row.screenshot_caption ?? row.media_filename ?? 'Фотография'} loading="lazy" decoding="async" className="mx-auto max-h-[78vh] w-auto max-w-full rounded-xl object-contain" />
+      {url && !error && (kind === 'photo' || kind === 'image' || kind === 'gif' || (row.screenshot_id && !externalKind)) && (
+        <img src={url} onError={() => setError(true)} alt={row.screenshot_title ?? row.screenshot_description ?? row.screenshot_caption ?? row.media_filename ?? 'Фотография'} loading="lazy" decoding="async" className="mx-auto max-h-[78vh] w-auto max-w-full rounded-xl object-contain" />
       )}
       {url && kind === 'video' && (
         <div className="overflow-hidden rounded-2xl bg-black shadow-lg">

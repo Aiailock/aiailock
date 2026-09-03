@@ -127,6 +127,6 @@ export default function VoiceRecorder({ value, onChange, disabled = false }: Pro
     <label className="mt-4 block text-xs text-burgundy/55">Или выбери готовую запись
       <input type="file" disabled={disabled || recording} accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.flac,.webm" onChange={(event) => { onChange(event.target.files?.[0] ?? null); event.currentTarget.value = ''; }} className="mt-2 block w-full rounded-xl border border-dashed border-burgundy/15 bg-white p-3 text-xs" />
     </label>
-    <p className="mt-2 text-[10px] text-burgundy/40">Запись микрофона работает на опубликованном HTTPS-сайте Netlify. Максимум файла — 25 МБ.</p>
+    <p className="mt-2 text-[10px] text-burgundy/40">Запись микрофона работает на опубликованном HTTPS-сайте Netlify. Максимум файла — 60 МБ.</p>
   </div>;
 }

@@ -304,6 +304,18 @@ html[data-reader-motion='lite'] .stardust,
 html[data-reader-motion='lite'] .leaf,
 html[data-reader-motion='lite'] .candle-glow,
 html[data-reader-motion='lite'] .gif-sprite { display: none !important; }
+
+/* Mobile Admin is a working surface: comfortable taps, no iOS form zoom and
+   no accidental horizontal overflow from long filenames/URLs. */
+@media (max-width: 767px) {
+  .admin-shell input,
+  .admin-shell textarea,
+  .admin-shell select { font-size: 16px; }
+  .admin-shell button,
+  .admin-shell a { touch-action: manipulation; }
+  .admin-shell main { overflow-x: clip; }
+  .admin-shell textarea { line-height: 1.55; }
+}
 html[data-reader-motion='lite'] .reader-shell::before { display: none; }
 html[data-reader-motion='lite'] .reader-shell [class*='backdrop-blur'] {
   -webkit-backdrop-filter: none !important;

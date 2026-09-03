@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Check, ExternalLink, Music2, Search } from 'lucide-react';
 import { searchSongs, type SongSearchResult } from '@/lib/songSearch';
 
-export default function SongSearch({ value, onChange }: { value: SongSearchResult | null; onChange: (song: SongSearchResult) => void }) {
+export default function SongSearch({ value, onChange, metadataOnly = false }: { value: SongSearchResult | null; onChange: (song: SongSearchResult) => void; metadataOnly?: boolean }) {
   const [query, setQuery] = useState(value ? `${value.artist} ${value.title}` : '');
   const [results, setResults] = useState<SongSearchResult[]>(value ? [value] : []);
   const [loading, setLoading] = useState(false);
@@ -32,7 +32,7 @@ export default function SongSearch({ value, onChange }: { value: SongSearchResul
       </label>
       <button type="submit" disabled={loading} className="shrink-0 rounded-xl bg-burgundy px-4 py-3 text-xs text-white disabled:opacity-45">{loading ? 'Ищу…' : 'Найти'}</button>
     </form>
-    <p className="mt-2 text-[10px] leading-relaxed opacity-45">Поиск без API-ключа через каталог iTunes. В историю добавляется официальное 30-секундное превью; полный трек можно загрузить своим аудиофайлом.</p>
+    <p className="mt-2 text-[10px] leading-relaxed opacity-45">{metadataOnly ? 'Поиск нужен только для названия, исполнителя и обложки. Короткий фрагмент ниже помогает узнать песню, но в историю не сохраняется.' : 'Поиск без API-ключа через каталог iTunes. Короткий фрагмент ниже нужен только для выбора песни.'}</p>
     {error && <div className="mt-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">{error}</div>}
     {results.length > 0 && <div className="mt-3 max-h-[410px] space-y-2 overflow-y-auto pr-1">
       {results.map((song) => {

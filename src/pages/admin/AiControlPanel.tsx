@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { RefreshCw, Sparkles, Check, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Check, KeyRound, PenLine, RefreshCw, RotateCcw, Save, Sparkles, X } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 
 interface Row {
@@ -32,6 +32,9 @@ export default function AiControlPanel() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
 
   async function load() {
     setLoading(true);
@@ -41,8 +44,9 @@ export default function AiControlPanel() {
       .eq('is_system_message', false)
       .not('original_text', 'is', null)
       .order('sent_at', { ascending: false })
-      .limit(50);
+      .limit(80);
     if (!error) setRows((data ?? []) as unknown as Row[]);
+    else setMessage(error.message);
     setLoading(false);
   }
 
@@ -51,64 +55,114 @@ export default function AiControlPanel() {
   async function invoke(body: Record<string, unknown>) {
     setBusy(true);
     setMessage(null);
-    const { data, error } = await supabase.functions.invoke('process-ai', { body });
+    const { data, error } = await supabase.functions.invoke('process-ai', {
+      body: { ...body, apiKey: apiKey.trim() || undefined },
+    });
     setBusy(false);
     if (error || data?.error) {
-      setMessage(error?.message ?? String(data?.error));
+      let detail = '';
+      const context = (error as { context?: unknown } | null)?.context;
+      if (context instanceof Response) {
+        const payload = await context.clone().json().catch(() => ({})) as { error?: unknown };
+        if (typeof payload.error === 'string') detail = payload.error;
+      }
+      setMessage(detail || error?.message || String(data?.error));
       return;
     }
-    setMessage(`Готово: обработано ${data.processed ?? 0}, кэш ${data.cached ?? 0}, fallback ${data.fallbackCount ?? 0}.`);
+    const processed = Number(data.processed ?? 0);
+    const changed = Number(data.changed ?? 0);
+    const unchanged = Number(data.unchanged ?? 0);
+    const fallbackCount = Number(data.fallbackCount ?? 0);
+    if (processed === 0 && Number(data.failed ?? 0) === 0) {
+      setMessage('Все сообщения уже проверены этой версией редактора. Новых или изменённых текстов нет.');
+    } else {
+      setMessage(`Готово: проверено ${processed}, улучшено ${changed}, оставлено без изменений ${unchanged}${fallbackCount ? ` · без облачного ИИ ${fallbackCount}` : ''}${data.failed ? ` · ошибок ${data.failed}` : ''}.`);
+    }
     await load();
   }
 
+  async function saveManual(row: Row) {
+    const value = editingText.trim();
+    if (!value) { setMessage('Текст не может быть пустым.'); return; }
+    setBusy(true);
+    const { error } = await supabase.from('messages').update({ display_text: value }).eq('id', row.id);
+    setBusy(false);
+    if (error) setMessage(error.message);
+    else {
+      setEditingId(null);
+      setMessage('Текст сохранён. Оригинал остался в базе и доступен для сравнения.');
+      await load();
+    }
+  }
+
   return (
-    <section className="mt-8 rounded-2xl border border-black/10 bg-white/60 p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="space-y-4">
+      <div className="rounded-[28px] bg-gradient-to-br from-[#351523] to-[#171016] p-5 text-white shadow-xl sm:p-6">
+        <div className="text-[10px] uppercase tracking-[2.4px] text-gold/75">бережный редактор</div>
+        <h1 className="mt-2 font-serif text-4xl">ИИ и оформление</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/60">Проверяет новые тексты, исправляет пунктуацию и небольшие опечатки. Ничего не публикуется пустым: если правка не нужна, это будет явно написано.</p>
+      </div>
+
+      <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm sm:p-5">
+        <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>
-          <h2 className="font-serif text-xl text-burgundy">ИИ и оформление</h2>
-          <p className="mt-1 text-xs opacity-60">ИИ предлагает, администратор принимает. Оригинал никогда не теряется.</p>
+          <label className="block text-sm font-medium text-burgundy"><KeyRound size={14} className="mr-1 inline" />Ключ OpenRouter — необязательно
+            <input type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-or-v1-…" className="mt-2 w-full rounded-xl border p-3 text-sm" />
+          </label>
+          <p className="mt-2 text-[11px] leading-relaxed opacity-50">С ключом используется бесплатный облачный маршрутизатор. Ключ действует только в этой вкладке и не сохраняется. Без ключа работает безопасная локальная проверка оформления.</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => void invoke({ action: 'process', limit: 100 })} disabled={busy} className="inline-flex items-center gap-2 rounded bg-burgundy px-3 py-2 text-xs text-white disabled:opacity-40">
+        <div className="grid grid-cols-2 gap-2 lg:flex">
+          <button onClick={() => void invoke({ action: 'process', limit: 100 })} disabled={busy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-burgundy px-4 py-3 text-xs text-white disabled:opacity-40">
             <Sparkles size={14} /> Обработать новые
           </button>
-          <button onClick={() => void invoke({ action: 'process', limit: 100, force: true })} disabled={busy} className="inline-flex items-center gap-2 rounded border border-black/15 px-3 py-2 text-xs disabled:opacity-40">
+          <button onClick={() => void invoke({ action: 'process', limit: 100, force: true })} disabled={busy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-black/15 px-4 py-3 text-xs disabled:opacity-40">
             <RefreshCw size={14} /> Переобработать
           </button>
         </div>
       </div>
+      </div>
 
-      {message && <div className="mt-4 rounded bg-black/5 p-3 text-xs">{message}</div>}
+      {message && <div className="rounded-2xl border border-black/8 bg-white/80 p-4 text-sm shadow-sm">{message}</div>}
       {loading ? <p className="mt-6 text-sm opacity-50">Загружаю сообщения…</p> : (
-        <div className="mt-5 space-y-3">
+        <div className="space-y-3">
           {rows.map((row) => {
             const meta = Array.isArray(row.ai_metadata) ? row.ai_metadata[0] : row.ai_metadata;
+            const shownText = row.display_text || row.original_text || '';
+            const changed = Boolean(row.display_text && row.original_text && row.display_text.trim() !== row.original_text.trim());
             return (
-              <article key={row.id} className="rounded-xl border border-black/10 bg-white p-4">
+              <article key={row.id} className="rounded-2xl border border-black/10 bg-white/90 p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="text-xs opacity-50">{new Date(row.sent_at).toLocaleString('ru-RU')} · {row.sender_name}</div>
-                  <span className="text-xs">{labelMood(meta?.mood ?? null)}</span>
+                  <span className="shrink-0 rounded-full bg-[#F6EFE0] px-2.5 py-1 text-[10px] text-burgundy">{labelMood(meta?.mood ?? null)}</span>
                 </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm">{row.original_text}</p>
-                {row.display_text && row.display_text !== row.original_text && (
-                  <p className="mt-2 whitespace-pre-wrap rounded bg-cream px-3 py-2 font-serif text-base">{row.display_text}</p>
-                )}
+                {editingId === row.id ? <div className="mt-3 rounded-2xl bg-[#F6EFE0] p-3">
+                  <textarea autoFocus value={editingText} onChange={(event) => setEditingText(event.target.value)} className="min-h-32 w-full rounded-xl border bg-white p-3 text-base leading-relaxed" />
+                  <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" disabled={busy} onClick={() => void saveManual(row)} className="rounded-xl bg-burgundy px-3 py-2.5 text-xs text-white"><Save size={13} className="mr-1 inline" />Сохранить</button><button type="button" disabled={busy} onClick={() => setEditingId(null)} className="rounded-xl border bg-white px-3 py-2.5 text-xs"><X size={13} className="mr-1 inline" />Отмена</button></div>
+                </div> : <>
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed opacity-65">{row.original_text}</p>
+                  <div className={`mt-3 rounded-xl px-3 py-3 ${changed ? 'bg-cream' : 'border border-dashed border-black/10 bg-black/[.018]'}`}>
+                    <div className="mb-1 text-[9px] uppercase tracking-[1.4px] opacity-40">{changed ? 'вариант редактора' : 'проверено · изменений не нужно'}</div>
+                    <p className="whitespace-pre-wrap font-serif text-lg leading-relaxed">{shownText || 'Текст отсутствует'}</p>
+                  </div>
+                </>}
                 <div className="mt-3 flex flex-wrap gap-2">
+                  {editingId !== row.id && <button type="button" onClick={() => { setEditingId(row.id); setEditingText(shownText); }} disabled={busy} className="inline-flex items-center gap-1 rounded-lg border border-black/10 px-3 py-2 text-xs"><PenLine size={13} />Исправить вручную</button>}
                   {meta?.status === 'completed' && (
-                    <button onClick={() => void invoke({ action: 'apply_suggestion', messageId: row.id })} disabled={busy} className="inline-flex items-center gap-1 rounded border border-black/10 px-2 py-1 text-xs">
+                    <button onClick={() => void invoke({ action: 'apply_suggestion', messageId: row.id })} disabled={busy} className="inline-flex items-center gap-1 rounded-lg border border-black/10 px-3 py-2 text-xs">
                       <Check size={13} /> Принять стиль
                     </button>
                   )}
                   {meta?.applied_style && (
-                    <button onClick={() => void invoke({ action: 'clear_applied', messageId: row.id })} disabled={busy} className="inline-flex items-center gap-1 rounded border border-black/10 px-2 py-1 text-xs">
+                    <button onClick={() => void invoke({ action: 'clear_applied', messageId: row.id })} disabled={busy} className="inline-flex items-center gap-1 rounded-lg border border-black/10 px-3 py-2 text-xs">
                       <RotateCcw size={13} /> Вернуть предложение
                     </button>
                   )}
-                  {meta?.error_message && <span className="text-xs text-red-700">Ошибка: {meta.error_message}</span>}
+                  {meta?.error_message && <span className="flex items-center gap-1 text-xs text-red-700"><AlertTriangle size={13} />Ошибка: {meta.error_message}</span>}
                 </div>
               </article>
             );
           })}
+          {rows.length === 0 && <div className="rounded-2xl border border-dashed border-black/10 bg-white/60 p-10 text-center text-sm opacity-50">Текстовых сообщений пока нет.</div>}
         </div>
       )}
     </section>

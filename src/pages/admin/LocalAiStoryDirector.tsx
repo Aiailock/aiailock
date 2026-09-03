@@ -482,11 +482,10 @@ export default function LocalAiStoryDirector() {
                   <input value={row.asset_url ?? ''} onChange={(event) => patchLocal(row.id, { asset_url: event.target.value })} placeholder="https://…" className="mt-2 w-full rounded-xl border p-3 text-sm"/>
                 </label>}
                 {row.suggested_type === 'music' && batchStatus === 'draft' && <div className="mt-3">
-                  <div className="mb-2 text-xs opacity-50">Подбери бесплатное официальное превью через уже существующий поиск музыки:</div>
-                  <SongSearch value={songSelections[row.id] ?? null} onChange={(song) => {
+                  <div className="mb-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">Поиск заполнит название и обложку. Для публикации вставь ссылку на <b>полный</b> аудиофайл — 30‑секундный фрагмент в Reader больше не используется.</div>
+                  <SongSearch metadataOnly value={songSelections[row.id] ?? null} onChange={(song) => {
                     setSongSelections((current) => ({ ...current, [row.id]: song }));
                     patchLocal(row.id, {
-                      asset_url: song.previewUrl,
                       title: song.title,
                       metadata: {
                         ...row.metadata,
@@ -497,10 +496,11 @@ export default function LocalAiStoryDirector() {
                         sourceUrl: song.sourceUrl || null,
                         genre: song.genre || null,
                         durationMs: song.durationMs,
-                        musicSource: 'search',
+                        musicSource: 'full-url',
                       },
                     });
                   }}/>
+                  <label className="mt-3 block text-xs">Прямая ссылка на полный MP3/M4A/OGG<input value={row.asset_url ?? ''} onChange={(event) => patchLocal(row.id, { asset_url: event.target.value, metadata: { ...row.metadata, musicSource: 'full-url' } })} placeholder="https://…/full-track.mp3" className="mt-2 w-full rounded-xl border p-3 text-sm"/></label>
                 </div>}
                 <div className="mt-3 text-[10px] opacity-35">Позиция: {row.left_element_id?.slice(0,8)} → {row.right_element_id?.slice(0,8)}</div>
               </div>

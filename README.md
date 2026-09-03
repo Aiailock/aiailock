@@ -22,6 +22,7 @@ The project is now completed across the planned stages:
 - **14. Video + Links + Random Design:** manual private video uploads or direct video URLs, transition cards that open externally or inside the story, editable link/video scenes and unique random styling for every selected item (`0018_video_links_random_styles.sql`).
 - **15. Music + Vinyl Audio:** no-key song lookup with official previews and artwork, private owner-audio/cover uploads, and an accessible SoundCloud-inspired spinning-vinyl player (`0019_music_vinyl_audio.sql`).
 - **16. Audio + AI + Journey:** WhatsApp-like voice recording, five audio-player designs, GIF search, looping/ducking background music, live-content style previews, a complete journey map and a free-token OpenRouter AI option (`0021_reader_media_ai_update.sql`).
+- **17. Global Mobile Admin:** fixed AI processing beyond the oldest cached batch, robust free-model response parsing, durable GIF copies and repair, full-length music, a grouped phone navigation, sticky mobile saving, four-answer questions and owner-visible answer analytics (`0022_global_admin_media_questions.sql`).
 
 The public reader never receives `service_role`, AI metadata internals, prompt versions, import logs or admin controls.
 
@@ -72,6 +73,9 @@ The migration chain is intentionally ordered:
 0017_detailed_reader_analytics.sql
 0018_video_links_random_styles.sql
 0019_music_vinyl_audio.sql
+0020_local_ai_story_director.sql
+0021_reader_media_ai_update.sql
+0022_global_admin_media_questions.sql
 ```
 
 Supabase's CLI supports linking a project and deploying migrations/functions as code.
@@ -100,6 +104,8 @@ supabase functions deploy public-timeline
 supabase functions deploy reader-access
 supabase functions deploy reader-analytics
 supabase functions deploy reader-reaction
+supabase functions deploy ai-director
+supabase functions deploy reader-interaction
 ```
 
 `supabase/config.toml` already declares which functions require JWT verification:
@@ -111,9 +117,11 @@ supabase functions deploy reader-reaction
 - `reader-access` → public reader endpoint
 - `reader-analytics` → public endpoint with its own signed reader-token check
 - `reader-reaction` → public endpoint with its own signed reader-token check
+- `ai-director` → admin JWT required
+- `reader-interaction` → public endpoint with its own signed reader-token check
 
 ### Final schema migration
-Run `supabase db push` once from a linked project. The ordered migration chain through `0019_music_vinyl_audio.sql` is applied automatically.
+Run `supabase db push` once from a linked project. The ordered migration chain through `0022_global_admin_media_questions.sql` is applied automatically.
 
 ## Required Edge Function secret
 
@@ -187,7 +195,7 @@ Do these in this order:
 3. Run `supabase db push`.
 4. Create the owner Auth user.
 5. Set `app_config.owner_user_id`.
-6. Deploy all seven Edge Functions listed above.
+6. Deploy all nine Edge Functions listed above.
 7. Set `READER_ACCESS_SECRET`.
 8. Add the two `VITE_` variables to Netlify.
 9. Deploy Netlify.

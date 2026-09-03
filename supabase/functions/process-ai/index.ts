@@ -35,38 +35,97 @@ function validStyle(value: unknown): value is SuggestedStyle {
     && zones.has(x.zone);
 }
 
-function conservativeDisplayText(original: string, candidate: string): string {
-  const normalize = (value: string) => value.toLowerCase().replace(/[\s\p{P}]+/gu, '');
-  const source = normalize(original);
-  const proposed = normalize(candidate);
-  // A polish may add/remove punctuation or whitespace, but it must not replace
-  // the lexical content. If the model changed the underlying characters, keep
-  // the exact original instead of trusting the model.
-  return source === proposed ? candidate.trim() : original;
+function normalizedLetters(value: string): string {
+  return value.toLocaleLowerCase('ru').replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
-function validAiResult(value: unknown, model: string): AiResult | null {
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+function conservativeDisplayText(original: string, candidate: string): string {
+  const trimmed = candidate.trim();
+  if (!trimmed) return original;
+  const source = normalizedLetters(original);
+  const proposed = normalizedLetters(trimmed);
+  if (source === proposed) return trimmed;
+
+  // Allow small spelling fixes, but reject rewrites. The old equality-only
+  // check contradicted the prompt: even one corrected typo caused the whole AI
+  // result to be silently replaced with the original text.
+  const longest = Math.max(source.length, proposed.length, 1);
+  const lengthDelta = Math.abs(source.length - proposed.length) / longest;
+  const distanceRatio = editDistance(source, proposed) / longest;
+  const sourceWords = original.trim().split(/\s+/).filter(Boolean).length;
+  const proposedWords = trimmed.split(/\s+/).filter(Boolean).length;
+  const wordDelta = Math.abs(sourceWords - proposedWords);
+  const allowedWordDelta = Math.max(1, Math.ceil(sourceWords * 0.08));
+  return lengthDelta <= 0.08 && distanceRatio <= 0.12 && wordDelta <= allowedWordDelta
+    ? trimmed
+    : original;
+}
+
+function contentText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!Array.isArray(value)) return '';
+  return value.map((part) => {
+    if (!part || typeof part !== 'object') return '';
+    const block = part as Record<string, unknown>;
+    return typeof block.text === 'string' ? block.text : typeof block.content === 'string' ? block.content : '';
+  }).join('');
+}
+
+function parseJsonObject(raw: string): unknown {
+  const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/```(?:json)?/gi, '').trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try { return JSON.parse(cleaned.slice(start, end + 1)); } catch { return null; }
+}
+
+function validAiResult(value: unknown, model: string, original: string): AiResult | null {
   if (!value || typeof value !== 'object') return null;
   const x = value as Record<string, unknown>;
-  if (typeof x.display_text !== 'string' || !x.display_text.trim()) return null;
-  if (typeof x.mood !== 'string' || !moods.has(x.mood as Mood)) return null;
-  if (!validStyle(x.suggested_style)) return null;
-  const importance = Number(x.importance ?? 0);
-  if (!Number.isInteger(importance) || importance < 0 || importance > 5) return null;
+  const base = fallback(original);
+  const candidate = typeof x.display_text === 'string' && x.display_text.trim()
+    ? x.display_text
+    : original;
+  const importanceValue = Number(x.importance);
+  const importance = Number.isInteger(importanceValue) && importanceValue >= 0 && importanceValue <= 5
+    ? importanceValue
+    : base.importance;
   return {
-    displayText: x.display_text,
-    mood: x.mood as Mood,
+    displayText: conservativeDisplayText(original, candidate),
+    mood: typeof x.mood === 'string' && moods.has(x.mood as Mood) ? x.mood as Mood : base.mood,
     importance,
-    suggestedStyle: x.suggested_style,
+    suggestedStyle: validStyle(x.suggested_style) ? x.suggested_style : base.suggestedStyle,
     model,
     promptVersion: PROMPT_VERSION,
   };
 }
 
-async function callAi(text: string, originalModel: string): Promise<AiResult> {
-  const apiKey = Deno.env.get('AI_API_KEY');
-  const endpoint = Deno.env.get('AI_API_URL');
-  const model = Deno.env.get('AI_MODEL') ?? originalModel;
+async function callAi(text: string, originalModel: string, temporaryApiKey = ''): Promise<AiResult> {
+  const configuredKey = Deno.env.get('AI_API_KEY') ?? '';
+  const configuredEndpoint = Deno.env.get('AI_API_URL') ?? '';
+  const useTemporaryKey = temporaryApiKey.length >= 20;
+  const apiKey = useTemporaryKey ? temporaryApiKey : configuredKey;
+  const endpoint = useTemporaryKey ? 'https://openrouter.ai/api/v1/chat/completions' : configuredEndpoint;
+  const model = useTemporaryKey ? 'openrouter/free' : (Deno.env.get('AI_MODEL') ?? originalModel);
   if (!apiKey || !endpoint) return fallback(text);
 
   const resp = await fetch(endpoint, {
@@ -78,20 +137,20 @@ async function callAi(text: string, originalModel: string): Promise<AiResult> {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: text },
       ],
-      response_format: { type: 'json_object' },
+      // Some OpenRouter free models reject response_format even though they can
+      // follow a strict JSON instruction. The parser below safely extracts the
+      // first object from plain text or fenced JSON.
+      ...(useTemporaryKey ? {} : { response_format: { type: 'json_object' } }),
     }),
   });
   if (!resp.ok) return fallback(text);
-  const payload: any = await resp.json();
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(payload.choices?.[0]?.message?.content ?? '{}');
-  } catch {
-    return fallback(text);
-  }
-  const result = validAiResult(parsed, model);
+  const payload = await resp.json().catch(() => ({})) as Record<string, unknown>;
+  const choices = Array.isArray(payload.choices) ? payload.choices : [];
+  const first = choices[0] && typeof choices[0] === 'object' ? choices[0] as Record<string, unknown> : {};
+  const message = first.message && typeof first.message === 'object' ? first.message as Record<string, unknown> : {};
+  const parsed = parseJsonObject(contentText(message.content));
+  const result = validAiResult(parsed, model, text);
   if (!result) return fallback(text);
-  result.displayText = conservativeDisplayText(text, result.displayText);
   return result;
 }
 
@@ -129,42 +188,69 @@ async function main(req: Request) {
     : [];
   const force = Boolean(body.force);
   const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 500);
+  const temporaryApiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+  if (temporaryApiKey && (temporaryApiKey.length < 20 || temporaryApiKey.length > 300)) {
+    throw new HttpError(400, 'Вставь корректный ключ OpenRouter или оставь поле пустым.');
+  }
 
-  let q = db
-    .from('messages')
-    .select('id,original_text')
-    .eq('is_system_message', false)
-    .not('original_text', 'is', null)
-    .order('sent_at', { ascending: true })
-    .limit(limit);
-  if (ids.length) q = q.in('id', ids);
-
-  const { data: msgs, error: messageError } = await q;
-  if (messageError) throw new Error(messageError.message);
+  type MessageCandidate = {
+    id: string;
+    original_text: string | null;
+    ai_metadata?: { source_hash?: string | null; prompt_version?: string | null } | Array<{ source_hash?: string | null; prompt_version?: string | null }> | null;
+  };
+  const msgs: MessageCandidate[] = [];
+  if (ids.length) {
+    const { data, error } = await db.from('messages')
+      .select('id,original_text,ai_metadata(source_hash,prompt_version)')
+      .in('id', ids)
+      .limit(limit);
+    if (error) throw new Error(error.message);
+    msgs.push(...((data ?? []) as MessageCandidate[]));
+  } else {
+    // Scan in pages until we have `limit` genuinely new/changed rows. The old
+    // query limited first and checked cache afterwards, so after the oldest 100
+    // were cached every later click processed zero forever.
+    for (let from = 0; msgs.length < limit; from += 500) {
+      const { data, error } = await db.from('messages')
+        .select('id,original_text,ai_metadata(source_hash,prompt_version)')
+        .eq('is_system_message', false)
+        .not('original_text', 'is', null)
+        .order('sent_at', { ascending: true })
+        .range(from, from + 499);
+      if (error) throw new Error(error.message);
+      const page = (data ?? []) as MessageCandidate[];
+      for (const message of page) {
+        const original = message.original_text ?? '';
+        const sourceHash = await hash(original);
+        const relation = Array.isArray(message.ai_metadata) ? message.ai_metadata[0] : message.ai_metadata;
+        if (force || relation?.source_hash !== sourceHash || relation?.prompt_version !== PROMPT_VERSION) msgs.push(message);
+        if (msgs.length >= limit) break;
+      }
+      if (page.length < 500) break;
+    }
+  }
 
   let processed = 0;
   let cached = 0;
   let failed = 0;
   let fallbackCount = 0;
+  let changed = 0;
+  let unchanged = 0;
   const configuredModel = Deno.env.get('AI_MODEL') ?? 'gpt-4.1-mini';
 
   for (const m of msgs ?? []) {
     try {
       const original = m.original_text ?? '';
       const sourceHash = await hash(original);
-      const { data: old } = await db
-        .from('ai_metadata')
-        .select('id,source_hash,model,prompt_version')
-        .eq('message_id', m.id)
-        .maybeSingle();
-
-      if (!force && old?.source_hash === sourceHash && old.prompt_version === PROMPT_VERSION) {
+      const relation = Array.isArray(m.ai_metadata) ? m.ai_metadata[0] : m.ai_metadata;
+      if (!force && relation?.source_hash === sourceHash && relation?.prompt_version === PROMPT_VERSION) {
         cached++;
         continue;
       }
 
-      const result = await callAi(original, configuredModel);
+      const result = await callAi(original, configuredModel, temporaryApiKey);
       if (result.model === 'local-fallback') fallbackCount++;
+      if (result.displayText.trim() === original.trim()) unchanged++; else changed++;
 
       const { error: messageUpdateError } = await db
         .from('messages')
@@ -200,7 +286,7 @@ async function main(req: Request) {
     }
   }
 
-  return json({ processed, cached, failed, fallbackCount, promptVersion: PROMPT_VERSION });
+  return json({ processed, changed, unchanged, cached, failed, fallbackCount, promptVersion: PROMPT_VERSION });
 }
 
 Deno.serve(async (req) => {

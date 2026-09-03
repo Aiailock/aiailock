@@ -13,6 +13,16 @@ function json(body: unknown, status = 200) {
   });
 }
 
+function contentText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!Array.isArray(value)) return '';
+  return value.map((part) => {
+    if (!part || typeof part !== 'object') return '';
+    const block = part as Record<string, unknown>;
+    return typeof block.text === 'string' ? block.text : typeof block.content === 'string' ? block.content : '';
+  }).join('');
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
@@ -61,9 +71,9 @@ Deno.serve(async (request) => {
     const choices = Array.isArray(payload.choices) ? payload.choices : [];
     const first = choices[0] && typeof choices[0] === 'object' ? choices[0] as Record<string, unknown> : {};
     const message = first.message && typeof first.message === 'object' ? first.message as Record<string, unknown> : {};
-    const content = typeof message.content === 'string' ? message.content : '';
-    if (!content) throw new HttpError(502, 'Бесплатная модель вернула пустой ответ. Попробуй ещё раз.');
-    return json({ content, model });
+    const content = contentText(message.content) || contentText(message.reasoning);
+    if (!content.trim()) throw new HttpError(502, 'Бесплатная модель вернула пустой ответ. Запусти ещё раз: бесплатный маршрутизатор выберет другую модель.');
+    return json({ content, model: typeof payload.model === 'string' ? payload.model : model });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return json({ error: message }, error instanceof HttpError ? error.status : 500);

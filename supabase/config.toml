@@ -19,5 +19,8 @@ verify_jwt = false
 [functions.reader-reaction]
 verify_jwt = false
 
+[functions.reader-interaction]
+verify_jwt = false
+
 [functions.ai-director]
 verify_jwt = true

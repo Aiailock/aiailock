@@ -36,6 +36,7 @@ export interface GeneratedSuggestion {
   assetQuery?: string;
   reason?: string;
   confidence?: number;
+  variant?: 'tender' | 'visual' | 'memory' | 'cinematic';
 }
 
 const MEDIA_TYPES = new Set(['photo', 'video', 'audio', 'gif', 'sticker', 'screenshot']);
@@ -115,12 +116,90 @@ function rowForPrompt(row: StoryContextRow) {
   };
 }
 
+function excerptForGap(gap: CandidateGap): string {
+  const candidates = [...gap.before, ...gap.after]
+    .map((row) => clean(row.content_text, 150))
+    .filter((text) => text.length >= 18 && text.length <= 150)
+    .sort((a, b) => b.length - a.length);
+  return candidates[0] ?? '';
+}
+
+function moodSearchForGap(gap: CandidateGap): string {
+  const mood = `${gap.left.mood ?? ''} ${gap.right.mood ?? ''}`.toLowerCase();
+  const text = `${gap.left.content_text ?? ''} ${gap.right.content_text ?? ''}`.toLowerCase();
+  if (/смеш|funny|хаха|ахах|😂|прикол/.test(`${mood} ${text}`)) return 'cute funny love reaction animated gif';
+  if (/груст|sad|слез|скуч|обид|прости|боле/.test(`${mood} ${text}`)) return 'cute warm hug comfort heart animated gif';
+  if (/ноч|night|сон|спи|доброй ночи|луна/.test(`${mood} ${text}`)) return 'cute good night love stars animated gif';
+  if (/подар|birthday|день рождения|сюрприз|gift/.test(`${mood} ${text}`)) return 'cute love gift celebration animated gif';
+  if (/important|deep|важн|сердц|люб/.test(`${mood} ${text}`)) return 'cute love heart couple animated gif';
+  return 'cute romantic couple heart animated gif';
+}
+
+function tenderBody(gap: CandidateGap): string {
+  if (gap.gapHours >= 24 * 14) return 'Здесь начинается ещё одна маленькая глава нашей истории.';
+  if ((gap.left.importance ?? 0) >= 4 || (gap.right.importance ?? 0) >= 4) return 'Вот здесь хочется ненадолго остановиться и просто сохранить этот момент.';
+  if (gap.textRun >= 6) return 'А между этими словами — ещё один маленький кусочек нас.';
+  return 'Иногда самые тёплые вещи прячутся именно между обычными строками.';
+}
+
+function fallbackVariants(gap: CandidateGap, mode: DirectorMode, index: number): GeneratedSuggestion[] {
+  const isLongGap = gap.gapHours >= 24 * 14;
+  const excerpt = excerptForGap(gap);
+  const reason = gap.signals.join(' · ') || 'Место подходит для мягкого эмоционального перехода.';
+  const variants: GeneratedSuggestion[] = [
+    {
+      gapId: gap.id,
+      type: isLongGap ? 'chapter' : 'pause',
+      title: isLongGap ? 'Ещё одна глава о нас' : '',
+      body: tenderBody(gap),
+      reason: `${reason} Тихий романтичный переход.`,
+      confidence: isLongGap ? .72 : .66,
+      variant: 'tender',
+    },
+    {
+      gapId: gap.id,
+      type: 'gif',
+      title: 'Маленькая живая эмоция',
+      body: '',
+      assetQuery: moodSearchForGap(gap),
+      reason: `${reason} GIF даст улыбку и не потребует ещё одного длинного текста.`,
+      confidence: gap.nearbyMedia === 0 ? .7 : .56,
+      variant: 'visual',
+    },
+  ];
+
+  if (excerpt) {
+    variants.push({
+      gapId: gap.id,
+      type: 'quote',
+      title: 'Та самая фраза',
+      body: excerpt,
+      reason: `${reason} Можно бережно выделить настоящую фразу из истории.`,
+      confidence: .62,
+      variant: 'memory',
+    });
+  } else if (mode === 'cinematic') {
+    variants.push({
+      gapId: gap.id,
+      type: index % 2 === 0 ? 'image' : 'music',
+      title: index % 2 === 0 ? 'Тёплый визуальный кадр' : 'Музыкальная пауза',
+      body: '',
+      assetQuery: index % 2 === 0 ? 'romantic warm lights couple' : 'tender romantic instrumental',
+      reason: `${reason} Более кинематографичный вариант без выдумывания нового события.`,
+      confidence: .54,
+      variant: 'cinematic',
+    });
+  }
+
+  return variants.slice(0, mode === 'careful' ? 2 : 3);
+}
+
 export function buildDirectorPrompt(gaps: CandidateGap[], mode: DirectorMode): string {
   const density = mode === 'careful'
-    ? 'Очень сдержанно: лучше NONE, чем лишняя вставка. Не перегружай историю.'
+    ? 'Очень бережно: предложи два разных варианта на точку, но не перегружай историю.'
     : mode === 'balanced'
-      ? 'Умеренно: предлагай только заметно улучшающие ритм вставки.'
-      : 'Кинематографично, но без спама и повторов.';
+      ? 'Умеренно: предложи три разных варианта на точку — текстовый, визуальный и основанный на реальной фразе.'
+      : 'Кинематографично: предложи три заметно разных варианта, сохраняя правду исходной истории.';
 
   const payload = gaps.map((gap) => ({
     gapId: gap.id,
@@ -129,22 +208,25 @@ export function buildDirectorPrompt(gaps: CandidateGap[], mode: DirectorMode): s
     after: gap.after.map(rowForPrompt),
   }));
 
-  return `Ты — редактор уже ГОТОВОЙ личной истории отношений. История уже содержит музыку, GIF, фото, видео, главы и другие сцены.\n
-Твоя задача: только аккуратно ДОПОЛНИТЬ слабые переходы. Ничего из существующего не переписывай, не удаляй и не выдумывай факты или чувства.\n
+  return `Ты — очень бережный режиссёр уже ГОТОВОЙ личной истории отношений. Её будет читать один дорогой автору человек. История уже содержит музыку, GIF, фото, видео, главы и другие сцены.\n
+Твоя задача: сделать чтение нежным, искренним, местами трогательным до слёз — но только за счёт ритма, настоящих фраз и тёплого оформления. Ничего из существующего не переписывай, не удаляй и не выдумывай события, признания или чувства, которых нет в контексте.\n
 ${density}\n
 Разрешённые типы: pause, chapter, quote, gif, image, video, music, link, none.\n
 Правила:\n
-- Если рядом уже есть музыка/GIF/фото/глава — чаще выбирай none.\n
-- pause: короткая тихая фраза или пустая пауза.\n
+- Для каждого gapId дай ${mode === 'careful' ? '2' : '3'} РАЗНЫХ варианта. Не повторяй один тип внутри одного gapId.\n
+- Первый вариант tender: короткий тёплый переход. Второй visual: GIF/изображение/видео. Третий memory или cinematic: настоящая цитата, глава или музыка.\n
+- Если рядом уже есть много медиа, visual может быть none. Если вставка навредит ритму, допустим none, но не заменяй им все варианты.\n
+- pause: 1 короткая нежная фраза, уместная именно рядом с этим контекстом. Не используй пустую body.\n
 - chapter: только если реально начинается новый период/тема; title 2–6 слов.\n
-- quote: только если фраза прямо следует из контекста; не придумывай признания.\n
-- gif/image/video/music: не придумывай URL. В assetQuery дай поисковую фразу, подходящую по атмосфере.\n
+- quote: копируй или очень бережно сокращай реальную фразу из контекста; не придумывай признания.\n
+- gif/image/video/music: не придумывай URL. В assetQuery дай короткую поисковую фразу НА АНГЛИЙСКОМ, подходящую по атмосфере. Для GIF добавь слова cute и animated gif.\n
 - music: assetQuery = исполнитель/трек, если уверенно подходит, иначе настроение для поиска.\n
 - none: когда вставка не нужна.\n
 - body максимум 180 символов.\n
 - reason коротко объясняет пользу.\n
-Верни ТОЛЬКО JSON-массив без markdown. Для каждого gapId ровно один объект:\n
-[{"gapId":"...","type":"none|pause|chapter|quote|gif|image|video|music|link","title":"","body":"","assetQuery":"","reason":"","confidence":0.0}]\n
+- variant всегда tender, visual, memory или cinematic.\n
+Верни ТОЛЬКО JSON-массив без markdown:\n
+[{"gapId":"...","type":"none|pause|chapter|quote|gif|image|video|music|link","variant":"tender|visual|memory|cinematic","title":"","body":"","assetQuery":"","reason":"","confidence":0.0}]\n
 Контекст:\n${JSON.stringify(payload)}`;
 }
 
@@ -164,18 +246,39 @@ export function parseDirectorResponse(raw: string): GeneratedSuggestion[] {
       assetQuery: clean(String(item?.assetQuery ?? ''), 180),
       reason: clean(String(item?.reason ?? ''), 240),
       confidence: clamp(Number(item?.confidence ?? .5), 0, 1),
+      variant: ['tender','visual','memory','cinematic'].includes(String(item?.variant))
+        ? String(item.variant) as GeneratedSuggestion['variant']
+        : undefined,
     })).filter((item) => item.gapId && ['none','pause','chapter','quote','gif','image','video','music','link'].includes(item.type));
   } catch {
     return [];
   }
 }
 
-export function fallbackSuggestions(gaps: CandidateGap[]): GeneratedSuggestion[] {
-  return gaps.map((gap) => {
-    if (gap.gapHours >= 24 * 14) {
-      return { gapId: gap.id, type: 'chapter', title: 'Новая глава', body: '', reason: 'Большой временной переход — можно отделить следующий период.', confidence: .55 };
-    }
-    return { gapId: gap.id, type: 'pause', title: '', body: '', reason: gap.signals.join(' · '), confidence: .45 };
+export function fallbackSuggestions(gaps: CandidateGap[], mode: DirectorMode = 'balanced'): GeneratedSuggestion[] {
+  return gaps.flatMap((gap, index) => fallbackVariants(gap, mode, index));
+}
+
+export function completeSuggestionSet(
+  gaps: CandidateGap[],
+  generated: GeneratedSuggestion[],
+  mode: DirectorMode,
+): GeneratedSuggestion[] {
+  const allowed = new Set(gaps.map((gap) => gap.id));
+  const targetCount = mode === 'careful' ? 2 : 3;
+  return gaps.flatMap((gap, gapIndex) => {
+    const seenTypes = new Set<string>();
+    const received = generated
+      .filter((item) => item.gapId === gap.id && item.type !== 'none' && allowed.has(item.gapId))
+      .filter((item) => {
+        if (seenTypes.has(item.type)) return false;
+        seenTypes.add(item.type);
+        return true;
+      })
+      .slice(0, targetCount);
+    if (received.length >= targetCount) return received;
+    const fillers = fallbackVariants(gap, mode, gapIndex).filter((item) => !seenTypes.has(item.type));
+    return [...received, ...fillers].slice(0, targetCount);
   });
 }
 

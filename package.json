@@ -12,7 +12,8 @@
     "test:parser": "node --import tsx server/parser/selfTest.ts",
     "test:media": "node --import tsx server/media/selfTest.ts",
     "test:ai": "node --import tsx server/ai/selfTest.ts",
-    "test": "npm run test:parser && npm run test:media && npm run test:ai"
+    "test:director": "node --import tsx server/ai/directorSelfTest.ts",
+    "test": "npm run test:parser && npm run test:media && npm run test:ai && npm run test:director"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

@@ -378,15 +378,17 @@ export async function preloadTimelineMedia(
 
     const input = readerMediaInput(row);
     if (!input) continue;
-    const kind = row.media_kind ?? ((row.screenshot_id || row.memory_photo_storage_path) ? 'photo' : 'document');
+    const kind = row.type === 'gif'
+      ? 'gif'
+      : row.media_kind ?? ((row.screenshot_id || row.memory_photo_storage_path) ? 'photo' : 'document');
     // Video/audio/document URLs are intentionally requested only when they
     // approach the viewport: their private signed links should not expire
     // while the reader is still near the beginning of a long story.
-    if (kind !== 'photo' && kind !== 'sticker' && !row.screenshot_id) continue;
+    if (kind !== 'photo' && kind !== 'gif' && kind !== 'sticker' && !row.screenshot_id) continue;
     const key = mediaInputKey(input);
     tasks.set(key, async () => {
       const result = await fetchMediaUrl(input, token);
-      if (kind === 'photo' || kind === 'sticker' || row.screenshot_id) await warmImage(result.url);
+      if (kind === 'photo' || kind === 'gif' || kind === 'sticker' || row.screenshot_id) await warmImage(result.url);
       else if (result.thumbnailUrl) await warmImage(result.thumbnailUrl);
     });
   }

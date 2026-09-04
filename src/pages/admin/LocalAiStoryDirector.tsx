@@ -15,8 +15,10 @@ import { supabase } from '@/lib/supabaseClient';
 import SongSearch from '@/components/admin/SongSearch';
 import type { SongSearchResult } from '@/lib/songSearch';
 import CommonsMediaSearch, { type CommonsAsset } from '@/components/admin/CommonsMediaSearch';
+import { downloadRemoteGif, MAX_GIF_BYTES } from '@/lib/remoteMedia';
 import {
   buildDirectorPrompt,
+  completeSuggestionSet,
   fallbackSuggestions,
   occurredAtForGap,
   parseDirectorResponse,
@@ -46,6 +48,7 @@ interface SuggestionRow {
   reason: string | null;
   asset_query: string | null;
   asset_url: string | null;
+  asset_storage_path: string | null;
   confidence: number;
   style: Record<string, unknown>;
   metadata: Record<string, unknown>;
@@ -101,13 +104,40 @@ function normalizeSuggestion(generated: GeneratedSuggestion, gap: CandidateGap) 
     reason: generated.reason?.trim() || gap.signals.join(' · ') || null,
     asset_query: generated.assetQuery?.trim() || null,
     asset_url: null,
+    asset_storage_path: null,
     confidence: Math.max(0, Math.min(1, Number(generated.confidence ?? .5))),
     style: { zone: 'default', spacing: 'cinematic', animation: 'fade-up', hideTime: true },
-    metadata: {},
+    metadata: {
+      variant: generated.variant ?? 'tender',
+      variantGroup: gap.id,
+    },
     state: 'draft' as const,
     occurred_at: occurredAtForGap(gap),
   };
 }
+
+function suggestionGroup(row: SuggestionRow) {
+  return typeof row.metadata?.variantGroup === 'string'
+    ? row.metadata.variantGroup
+    : `${row.left_element_id ?? ''}:${row.right_element_id ?? ''}`;
+}
+
+function recommendedSelection(rows: SuggestionRow[]): Set<string> {
+  const best = new Map<string, SuggestionRow>();
+  for (const row of rows) {
+    const key = suggestionGroup(row);
+    const current = best.get(key);
+    if (!current || row.confidence > current.confidence) best.set(key, row);
+  }
+  return new Set(Array.from(best.values(), (row) => row.id));
+}
+
+const VARIANT_LABEL: Record<string, string> = {
+  tender: 'Нежный текст',
+  visual: 'Живая эмоция',
+  memory: 'Настоящая фраза',
+  cinematic: 'Кинематографично',
+};
 
 export default function LocalAiStoryDirector() {
   const engineRef = useRef<LocalEngine | null>(null);
@@ -128,6 +158,7 @@ export default function LocalAiStoryDirector() {
   const [commonsSelections, setCommonsSelections] = useState<Record<string, CommonsAsset | null>>({});
 
   const selectedCount = selected.size;
+  const suggestionPointCount = useMemo(() => new Set(suggestions.map(suggestionGroup)).size, [suggestions]);
   const needsAsset = useMemo(
     () => suggestions.filter((row) => selected.has(row.id) && ['gif','image','video','music','link'].includes(row.suggested_type) && !row.asset_url),
     [selected, suggestions],
@@ -195,7 +226,7 @@ export default function LocalAiStoryDirector() {
 
   async function askLocalAi(gaps: CandidateGap[]): Promise<GeneratedSuggestion[]> {
     const engine = engineRef.current;
-    if (!engine) return fallbackSuggestions(gaps);
+    if (!engine) return fallbackSuggestions(gaps, mode);
     const result: GeneratedSuggestion[] = [];
     for (let i = 0; i < gaps.length; i += 2) {
       const chunk = gaps.slice(i, i + 2);
@@ -208,12 +239,12 @@ export default function LocalAiStoryDirector() {
           ],
           temperature: 0.35,
           top_p: 0.85,
-          max_tokens: 900,
+          max_tokens: 1400,
         });
         const parsed = parseDirectorResponse(response.choices?.[0]?.message?.content ?? '');
-        result.push(...(parsed.length ? parsed : fallbackSuggestions(chunk)));
+        result.push(...(parsed.length ? parsed : fallbackSuggestions(chunk, mode)));
       } catch {
-        result.push(...fallbackSuggestions(chunk));
+        result.push(...fallbackSuggestions(chunk, mode));
       }
       await new Promise((resolve) => window.setTimeout(resolve, 0));
     }
@@ -239,7 +270,7 @@ export default function LocalAiStoryDirector() {
       }
       if (data?.error) throw new Error(String(data.error));
       const parsed = parseDirectorResponse(String(data?.content ?? ''));
-      result.push(...(parsed.length ? parsed : fallbackSuggestions(chunk)));
+      result.push(...(parsed.length ? parsed : fallbackSuggestions(chunk, mode)));
       await new Promise((resolve) => window.setTimeout(resolve, 0));
     }
     return result;
@@ -263,11 +294,12 @@ export default function LocalAiStoryDirector() {
         return;
       }
 
-      const generated = engineMode === 'cloud'
+      const rawGenerated = engineMode === 'cloud'
         ? await askCloudAi(gaps)
         : engineMode === 'local'
           ? await askLocalAi(gaps)
-          : fallbackSuggestions(gaps);
+          : fallbackSuggestions(gaps, mode);
+      const generated = completeSuggestionSet(gaps, rawGenerated, mode);
       const gapMap = new Map(gaps.map((gap) => [gap.id, gap]));
       const usable = generated.filter((item) => item.type !== 'none' && gapMap.has(item.gapId));
       if (usable.length === 0) {
@@ -296,9 +328,9 @@ export default function LocalAiStoryDirector() {
       setBatchId(batch.id);
       setBatchStatus('draft');
       setSuggestions(loaded);
-      setSelected(new Set(loaded.filter((row) => row.confidence >= (mode === 'careful' ? .62 : .52)).map((row) => row.id)));
+      setSelected(recommendedSelection(loaded));
       setProgress('');
-      setNotice(`Готово: ${loaded.length} точечных предложений. Ничего ещё не опубликовано.`);
+      setNotice(`Готово: ${loaded.length} вариантов для ${new Set(loaded.map(suggestionGroup)).size} точек истории. Для каждой точки уже выбран один лучший вариант; ничего ещё не опубликовано.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Не удалось проанализировать историю.');
     } finally {
@@ -311,6 +343,22 @@ export default function LocalAiStoryDirector() {
     setSuggestions((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
   }
 
+  function toggleSuggestion(row: SuggestionRow, checked: boolean) {
+    setSelected((current) => {
+      const next = new Set(current);
+      const group = suggestionGroup(row);
+      if (checked) {
+        suggestions.forEach((candidate) => {
+          if (suggestionGroup(candidate) === group) next.delete(candidate.id);
+        });
+        next.add(row.id);
+      } else {
+        next.delete(row.id);
+      }
+      return next;
+    });
+  }
+
   async function saveSuggestion(row: SuggestionRow) {
     const { error } = await supabase.from('ai_story_suggestions').update({
       suggested_type: row.suggested_type,
@@ -319,11 +367,30 @@ export default function LocalAiStoryDirector() {
       reason: row.reason,
       asset_query: row.asset_query,
       asset_url: row.asset_url,
+      asset_storage_path: row.asset_storage_path,
       style: row.style,
       metadata: row.metadata,
       updated_at: new Date().toISOString(),
     }).eq('id', row.id);
     if (error) throw error;
+  }
+
+  async function ensureGifStored(row: SuggestionRow): Promise<SuggestionRow> {
+    if (row.suggested_type !== 'gif' || row.asset_storage_path || !row.asset_url) return row;
+    setProgress('Сохраняю выбранную GIF в защищённую библиотеку…');
+    const file = await downloadRemoteGif(row.asset_url, row.title || 'romantic-animation');
+    if (file.size > MAX_GIF_BYTES) throw new Error('Выбранная GIF больше 20 МБ. Выбери вариант поменьше.');
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_') || 'animation.gif';
+    const path = `ai-director/${row.batch_id}/${row.id}-${safeName}`;
+    const { error } = await supabase.storage.from('screenshots').upload(path, file, {
+      contentType: 'image/gif',
+      cacheControl: '3600',
+      upsert: true,
+    });
+    if (error) throw error;
+    const next = { ...row, asset_storage_path: path };
+    patchLocal(row.id, next);
+    return next;
   }
 
   async function preparePreview() {
@@ -332,7 +399,8 @@ export default function LocalAiStoryDirector() {
     setNotice('');
     try {
       for (const row of suggestions) {
-        await saveSuggestion(row);
+        const prepared = selected.has(row.id) ? await ensureGifStored(row) : row;
+        await saveSuggestion(prepared);
         const state = selected.has(row.id) ? 'approved' : 'rejected';
         const { error } = await supabase.from('ai_story_suggestions').update({ state }).eq('id', row.id);
         if (error) throw error;
@@ -355,6 +423,9 @@ export default function LocalAiStoryDirector() {
     try {
       const { error } = await supabase.rpc('admin_unstage_ai_batch', { p_batch_id: batchId });
       if (error) throw error;
+      const uploaded = suggestions.map((row) => row.asset_storage_path).filter((path): path is string => Boolean(path));
+      if (uploaded.length) await supabase.storage.from('screenshots').remove(uploaded);
+      setSuggestions((current) => current.map((row) => ({ ...row, asset_storage_path: null })));
       setBatchStatus('draft');
       setShowPreview(false);
       setNotice('Скрытые AI-сцены удалены из предпросмотра. Опубликованная история не менялась.');
@@ -441,9 +512,9 @@ export default function LocalAiStoryDirector() {
 
     {suggestions.length > 0 && <>
       <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/10 bg-[#F5EEE9]/95 p-3 shadow-lg backdrop-blur-xl md:top-4">
-        <div className="text-sm"><b>{suggestions.length}</b> предложений · выбрано <b>{selectedCount}</b></div>
+        <div className="text-sm"><b>{suggestionPointCount}</b> точек · <b>{suggestions.length}</b> вариантов · выбрано <b>{selectedCount}</b></div>
         <div className="flex flex-wrap gap-2">
-          {batchStatus !== 'published' && <button type="button" onClick={() => setSelected(new Set(suggestions.map((row) => row.id)))} className="rounded-lg border bg-white px-3 py-2 text-xs">Выбрать все</button>}
+          {batchStatus !== 'published' && <button type="button" onClick={() => setSelected(recommendedSelection(suggestions))} className="rounded-lg border bg-white px-3 py-2 text-xs">Выбрать лучшие</button>}
           {batchStatus === 'draft' && <button type="button" disabled={busy || selectedCount === 0} onClick={() => void preparePreview()} className="rounded-lg bg-burgundy px-3 py-2 text-xs text-white disabled:opacity-40"><Eye size={13} className="mr-1 inline"/>Предпросмотр выбранных</button>}
           {batchStatus === 'staged' && <button type="button" disabled={busy} onClick={() => void unstage()} className="rounded-lg border px-3 py-2 text-xs"><Trash2 size={13} className="mr-1 inline"/>Убрать черновик</button>}
           {batchStatus === 'staged' && <button type="button" disabled={busy} onClick={() => void publish()} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs text-white"><Check size={13} className="mr-1 inline"/>Опубликовать выбранное</button>}
@@ -456,9 +527,9 @@ export default function LocalAiStoryDirector() {
           const mediaType = ['gif','image','video','music'].includes(row.suggested_type);
           return <article key={row.id} className={`rounded-2xl border bg-white/80 p-4 shadow-sm transition ${checked ? 'border-burgundy/35' : 'border-black/8 opacity-65'}`}>
             <div className="flex items-start gap-3">
-              <input type="checkbox" checked={checked} disabled={batchStatus !== 'draft'} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(row.id); else next.delete(row.id); return next; })} className="mt-1 h-4 w-4"/>
+              <input type="radio" name={`director-${suggestionGroup(row)}`} checked={checked} disabled={batchStatus !== 'draft'} onChange={(event) => toggleSuggestion(row, event.target.checked)} className="mt-1 h-4 w-4"/>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center justify-between gap-2"><div className="text-xs uppercase tracking-[1.6px] text-burgundy/55">AI предложение {index + 1}</div><div className="text-[10px] opacity-40">уверенность {Math.round(row.confidence * 100)}%</div></div>
+                <div className="flex flex-wrap items-center justify-between gap-2"><div className="text-xs uppercase tracking-[1.6px] text-burgundy/55">{VARIANT_LABEL[String(row.metadata?.variant ?? '')] ?? `Вариант ${index + 1}`}</div><div className="text-[10px] opacity-40">уверенность {Math.round(row.confidence * 100)}%</div></div>
                 <div className="mt-2 text-[11px] opacity-45">{row.reason}</div>
                 <div className="mt-3 grid gap-3 sm:grid-cols-[170px_1fr]">
                   <select value={row.suggested_type} disabled={batchStatus !== 'draft'} onChange={(event) => patchLocal(row.id, { suggested_type: event.target.value as DirectorSuggestionType })} className="rounded-xl border p-3 text-sm">{Object.entries(TYPE_LABEL).map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select>

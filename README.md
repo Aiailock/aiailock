@@ -23,6 +23,7 @@ The project is now completed across the planned stages:
 - **15. Music + Vinyl Audio:** no-key song lookup with official previews and artwork, private owner-audio/cover uploads, and an accessible SoundCloud-inspired spinning-vinyl player (`0019_music_vinyl_audio.sql`).
 - **16. Audio + AI + Journey:** WhatsApp-like voice recording, five audio-player designs, GIF search, looping/ducking background music, live-content style previews, a complete journey map and a free-token OpenRouter AI option (`0021_reader_media_ai_update.sql`).
 - **17. Global Mobile Admin:** fixed AI processing beyond the oldest cached batch, robust free-model response parsing, durable GIF copies and repair, full-length music, a grouped phone navigation, sticky mobile saving, four-answer questions and owner-visible answer analytics (`0022_global_admin_media_questions.sql`).
+- **18. Romantic Director:** two or three genuinely different suggestions for each story gap, romantic text/GIF/true-quote variants, working GIF search with emotional presets, private storage for AI-selected GIFs, searchable phone navigation, romantic quick templates and offline-first reader reactions (`0023_romantic_director_gif_library.sql`).
 
 The public reader never receives `service_role`, AI metadata internals, prompt versions, import logs or admin controls.
 
@@ -76,6 +77,7 @@ The migration chain is intentionally ordered:
 0020_local_ai_story_director.sql
 0021_reader_media_ai_update.sql
 0022_global_admin_media_questions.sql
+0023_romantic_director_gif_library.sql
 ```
 
 Supabase's CLI supports linking a project and deploying migrations/functions as code.
@@ -121,7 +123,7 @@ supabase functions deploy reader-interaction
 - `reader-interaction` → public endpoint with its own signed reader-token check
 
 ### Final schema migration
-Run `supabase db push` once from a linked project. The ordered migration chain through `0022_global_admin_media_questions.sql` is applied automatically.
+Run `supabase db push` once from a linked project. The ordered migration chain through `0023_romantic_director_gif_library.sql` is applied automatically.
 
 ## Required Edge Function secret
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowRight, BookHeart, Check, ImagePlus, Layers3, Link2, Music2, Save, Sparkles, Trash2, Video, WandSparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookHeart, Check, Heart, ImagePlus, Layers3, Link2, Music2, Save, Sparkles, Trash2, Video, WandSparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { createManualAudio, createManualVideo, isAudioFile, MAX_MANUAL_AUDIO_BYTES, MAX_MANUAL_VIDEO_BYTES } from '@/lib/manualMedia';
 import { safeRemoteUrl } from '@/lib/safeUrl';
@@ -71,6 +71,49 @@ const DRAFT_KEY = 'for-you-mobile-studio-draft-v1';
 const nowForInput = () => new Date().toISOString().slice(0, 16);
 const emptyDraft = (): Draft => ({ kind: 'note', title: '', body: '', occurredAt: nowForInput(), style: { dateStyle: 'line', spacing: 'normal', animation: 'fade-up' }, published: true, visibleFrom: '', interaction: 'gift', gifUrl: '', externalUrl: '', linkOpenMode: 'external', musicMode: 'upload', artist: '', audioPlayerStyle: 'vinyl', selectedSong: null, albumLayout: 'carousel', reactionEmoji: '❤', reactionText: '', optionA: 'Да', optionB: 'Конечно', optionC: 'Очень', optionD: 'Расскажу позже', resultA: '', resultB: '', resultC: '', resultD: '' });
 
+const ROMANTIC_TEMPLATES: Array<{ label: string; hint: string; value: Partial<Draft>; style: StyleValue }> = [
+  {
+    label: 'Объятие через экран',
+    hint: 'коробочка-сюрприз',
+    value: { kind: 'interactive', interaction: 'gift', title: 'Тебе кое-что маленькое', body: 'Вот так. Крепко-крепко обнимаю тебя через этот экран и ещё пару секунд не отпускаю.' },
+    style: { zone: 'romantic', frame: 'ribbon', font: 'badscript', decoration: ['petals'], spacing: 'cinematic' },
+  },
+  {
+    label: 'Письмо на грустный день',
+    hint: 'открывается конверт',
+    value: { kind: 'interactive', interaction: 'letter', title: 'Открой, если тебе вдруг грустно', body: 'Я рядом. Даже если сейчас могу обнять тебя только словами.' },
+    style: { zone: 'sepia', frame: 'envelope', font: 'badscript', spacing: 'cinematic' },
+  },
+  {
+    label: 'Милый вопрос',
+    hint: '4 варианта и 4 ответа',
+    value: {
+      kind: 'interactive', interaction: 'question', title: 'Можно один очень важный вопрос?', body: 'Любой твой ответ здесь всё равно заставит меня улыбнуться.',
+      optionA: 'Да ☺️', optionB: 'Конечно', optionC: 'Очень-очень', optionD: 'Сначала обними',
+      resultA: 'Я так и знал. И уже улыбаюсь.', resultB: 'Тогда считаю это нашим маленьким договором.', resultC: 'Вот теперь моё сердце довольно.', resultD: 'Иди сюда. Сначала обниму, потом спрошу ещё раз.',
+    },
+    style: { zone: 'romantic', frame: 'heart', font: 'serif', decoration: ['pixel-hearts'], spacing: 'cinematic' },
+  },
+  {
+    label: 'Между строк',
+    hint: 'тихая пауза',
+    value: { kind: 'pause', title: '', body: 'Иногда самые тёплые вещи прячутся именно между обычными строками.' },
+    style: { zone: 'dusk', font: 'literata', decoration: ['candles'], spacing: 'cinematic' },
+  },
+  {
+    label: 'Та самая фраза',
+    hint: 'большая цитата',
+    value: { kind: 'quote', title: 'из нашей истории', body: '' },
+    style: { zone: 'burgundy', frame: 'wax-seal', font: 'badscript', textAlign: 'center', spacing: 'cinematic' },
+  },
+  {
+    label: 'Ночное сообщение',
+    hint: 'мягкая страница',
+    value: { kind: 'note', title: 'Пока ты спишь…', body: '' },
+    style: { zone: 'night', frame: 'moonlit', font: 'badscript', decoration: ['stardust'], spacing: 'cinematic' },
+  },
+];
+
 function readDraft(): Draft {
   try {
     const parsed = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '') as Partial<Draft>;
@@ -128,6 +171,18 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
   function chooseKind(kind: CreateKind) {
     if (kind !== draft.kind) { setFiles([]); setCoverFile(null); setGifSelection(null); }
     patch({ kind, ...(kind === 'voice' ? { audioPlayerStyle: 'voice' } : kind === 'music' ? { audioPlayerStyle: 'vinyl' } : {}) });
+  }
+  function applyRomanticTemplate(template: (typeof ROMANTIC_TEMPLATES)[number]) {
+    setFiles([]);
+    setCoverFile(null);
+    setGifSelection(null);
+    setDraft((current) => ({
+      ...current,
+      ...template.value,
+      style: { ...current.style, ...template.style },
+      occurredAt: current.occurredAt || nowForInput(),
+    }));
+    setMessage('Заготовка готова. Перепиши слова под себя — оформление уже настроено.');
   }
   function reset() { const next = emptyDraft(); setDraft(next); setFiles([]); setCoverFile(null); setGifSelection(null); localStorage.removeItem(DRAFT_KEY); setMessage('Новый чистый черновик готов.'); }
   function selectFiles(incoming: File[]) {
@@ -358,6 +413,12 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
     <section className="grid min-w-0 gap-5 xl:grid-cols-[.8fr_1.2fr]">
       <form onSubmit={(event) => void save(event)} className="min-w-0 rounded-[28px] border border-black/5 bg-white/90 p-4 pb-28 shadow-sm sm:p-6">
         <div className="flex items-start gap-3"><div className="rounded-2xl bg-burgundy p-3 text-white"><BookHeart size={20} /></div><div><div className="text-[10px] uppercase tracking-[2px] text-burgundy/45">mobile story studio</div><h1 className="font-serif text-3xl text-burgundy">Добавить страницу</h1><p className="mt-1 text-xs opacity-50">Дата уже стоит текущая. Черновик сохраняется в этом телефоне автоматически.</p></div></div>
+
+        <div className="mt-5 rounded-2xl border border-burgundy/10 bg-gradient-to-br from-[#FFF9F7] to-[#F6E8EC] p-3">
+          <div className="flex items-center gap-2 text-xs font-medium text-burgundy"><Heart size={14} fill="currentColor"/>Нежные заготовки</div>
+          <p className="mt-1 text-[10px] leading-relaxed text-burgundy/50">Одно нажатие создаёт готовую сцену и оформление. Слова можно сразу изменить под вашу настоящую историю.</p>
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">{ROMANTIC_TEMPLATES.map((template) => <button type="button" key={template.label} onClick={() => applyRomanticTemplate(template)} className="min-w-[150px] shrink-0 rounded-2xl border border-burgundy/10 bg-white/80 p-3 text-left shadow-sm"><span className="block text-xs font-medium text-burgundy">{template.label}</span><span className="mt-1 block text-[10px] text-ink/45">{template.hint}</span></button>)}</div>
+        </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {KINDS.map((kind) => <button type="button" key={kind.id} onClick={() => chooseKind(kind.id)} className={`min-w-0 rounded-2xl border p-3 text-left transition ${draft.kind === kind.id ? 'border-burgundy bg-burgundy text-white shadow-md' : 'border-black/10 bg-[#FBF8F5]'}`}><div className="text-sm font-medium">{kind.label}</div><div className="mt-1 text-[10px] leading-snug opacity-55">{kind.hint}</div></button>)}

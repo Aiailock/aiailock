@@ -25,12 +25,14 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Search,
   Settings2,
   ShieldCheck,
   Sparkles,
   Star,
   Trash2,
   Video,
+  WifiOff,
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
@@ -212,6 +214,8 @@ function localDateTime(value: string) {
 export default function AdminDashboard() {
   const [tab, setTab] = useState<Tab>(initialAdminTab);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileQuery, setMobileQuery] = useState("");
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [userEmail, setUserEmail] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -221,6 +225,23 @@ export default function AdminDashboard() {
       .getUser()
       .then(({ data }) => setUserEmail(data.user?.email ?? ""));
   }, []);
+  useEffect(() => {
+    const online = () => setIsOnline(true);
+    const offline = () => setIsOnline(false);
+    window.addEventListener('online', online);
+    window.addEventListener('offline', offline);
+    return () => {
+      window.removeEventListener('online', online);
+      window.removeEventListener('offline', offline);
+    };
+  }, []);
+  const filteredNavGroups = useMemo(() => {
+    const query = mobileQuery.trim().toLocaleLowerCase('ru');
+    if (!query) return navGroups;
+    return navGroups
+      .map((group) => ({ ...group, items: group.items.filter((id) => tabLabel(id).toLocaleLowerCase('ru').includes(query)) }))
+      .filter((group) => group.items.length > 0);
+  }, [mobileQuery]);
   async function logout() {
     await supabase.auth.signOut();
     window.location.href = "/admin/login";
@@ -253,6 +274,7 @@ export default function AdminDashboard() {
         <header className="sticky top-0 z-30 border-b border-black/10 bg-[#f5eee9]/92 shadow-sm backdrop-blur-xl md:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-3"><button type="button" aria-label="Открыть все разделы" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)} className="flex min-w-0 items-center gap-3 text-left"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-burgundy text-white"><Menu size={18}/></span><span className="min-w-0"><span className="block font-pixel text-[8px] text-burgundy/50">FOR YOU / ADMIN</span><span className="mt-0.5 block truncate font-serif text-xl text-burgundy">{tabLabel(tab)}</span></span></button><div className="flex gap-1"><button aria-label="Синхронизировать" onClick={() => void rebuildSpecials()} disabled={busy} className="rounded-xl border border-black/10 bg-white/70 p-2.5"><RefreshCw size={16} className={busy ? "animate-spin" : ""} /></button><button aria-label="Открыть Reader" onClick={() => openTab('preview')} className="rounded-xl border border-black/10 bg-white/70 p-2.5"><Eye size={16}/></button></div></div>
         </header>
+        {!isOnline && <div className="mx-auto mt-3 max-w-[1500px] px-4 md:px-7"><div className="flex items-center gap-2 rounded-xl border border-amber-300/60 bg-amber-50 p-3 text-xs text-amber-900"><WifiOff size={14}/>Нет сети. Черновик останется на телефоне, но публикацию лучше сделать после подключения.</div></div>}
         <div className="mx-auto hidden max-w-[1500px] items-center justify-between px-7 pb-0 pt-6 md:flex"><div><div className="text-[10px] uppercase tracking-[2px] text-burgundy/40">раздел</div><div className="mt-1 font-serif text-2xl text-burgundy">{tabLabel(tab)}</div></div><button onClick={() => openTab("preview")} className="rounded-xl border border-black/10 bg-white/60 px-4 py-2 text-xs"><Eye size={14} className="mr-1 inline" />Посмотреть reader</button></div>
         {notice && <div className="mx-auto mt-4 max-w-[1500px] px-4 md:px-7"><div className="rounded-xl border border-black/10 bg-white/75 p-3 text-sm shadow-sm">{notice}</div></div>}
         <main className="mx-auto max-w-[1500px] px-4 pb-24 pt-5 md:px-7 md:py-6">
@@ -275,7 +297,20 @@ export default function AdminDashboard() {
         {tab === "settings" && <SettingsPanel />}
         {tab === "preview" && <PreviewPanel />}
         </main>
-        {mobileMenuOpen && <div className="fixed inset-0 z-50 md:hidden"><button type="button" aria-label="Закрыть меню" onClick={() => setMobileMenuOpen(false)} className="absolute inset-0 bg-black/45 backdrop-blur-sm"/><div className="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-[30px] bg-[#f5eee9] px-4 pb-[calc(24px+env(safe-area-inset-bottom))] pt-4 shadow-2xl"><div className="mb-4 flex items-center justify-between"><div><div className="font-serif text-2xl text-burgundy">Все разделы</div><div className="mt-0.5 max-w-[240px] truncate text-[10px] opacity-40">{userEmail}</div></div><button type="button" onClick={() => setMobileMenuOpen(false)} className="rounded-xl border bg-white p-2.5"><X size={18}/></button></div>{navGroups.map((group) => <div key={group.label} className="mb-4"><div className="mb-2 text-[9px] uppercase tracking-[1.8px] text-burgundy/40">{group.label}</div><div className="grid grid-cols-2 gap-2">{group.items.map((id) => { const Icon = tabIcons[id]; return <button type="button" key={id} onClick={() => openTab(id)} className={`flex min-h-14 items-center gap-2 rounded-2xl border p-3 text-left text-sm ${tab === id ? 'border-burgundy bg-burgundy text-white' : 'border-black/8 bg-white/75 text-burgundy'}`}><Icon size={16}/><span>{tabLabel(id)}</span></button>; })}</div></div>)}<div className="grid grid-cols-2 gap-2 border-t border-black/8 pt-4"><button type="button" onClick={() => void rebuildSpecials()} className="rounded-2xl border bg-white/75 p-3 text-xs"><RefreshCw size={14} className="mr-1 inline"/>Синхронизация</button><button type="button" onClick={() => void logout()} className="rounded-2xl border bg-white/75 p-3 text-xs text-red-700"><LogOut size={14} className="mr-1 inline"/>Выйти</button></div></div></div>}
+        {mobileMenuOpen && <div className="fixed inset-0 z-50 md:hidden">
+          <button type="button" aria-label="Закрыть меню" onClick={() => setMobileMenuOpen(false)} className="absolute inset-0 bg-black/45 backdrop-blur-sm"/>
+          <div className="absolute inset-x-0 bottom-0 max-h-[92vh] overflow-y-auto rounded-t-[30px] bg-[#f5eee9] px-4 pb-[calc(24px+env(safe-area-inset-bottom))] pt-4 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between"><div><div className="font-serif text-2xl text-burgundy">Куда перейти?</div><div className="mt-0.5 max-w-[240px] truncate text-[10px] opacity-40">{userEmail}</div></div><button type="button" onClick={() => setMobileMenuOpen(false)} className="rounded-xl border bg-white p-2.5"><X size={18}/></button></div>
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => openTab('create')} className="rounded-2xl bg-burgundy p-3 text-left text-white"><Plus size={16}/><span className="mt-2 block text-sm">Продолжить черновик</span><span className="mt-1 block text-[10px] text-white/55">текст сохранён на телефоне</span></button>
+              <button type="button" onClick={() => openTab('preview')} className="rounded-2xl border border-burgundy/10 bg-white/75 p-3 text-left text-burgundy"><Eye size={16}/><span className="mt-2 block text-sm">Проверить Reader</span><span className="mt-1 block text-[10px] opacity-45">как всё увидит она</span></button>
+            </div>
+            <label className="mb-4 flex items-center gap-2 rounded-2xl border border-black/10 bg-white/80 px-3"><Search size={15} className="text-burgundy/45"/><input value={mobileQuery} onChange={(event) => setMobileQuery(event.target.value)} placeholder="Найти раздел…" className="min-w-0 flex-1 border-0 bg-transparent py-3 text-sm outline-none"/></label>
+            {filteredNavGroups.map((group) => <div key={group.label} className="mb-4"><div className="mb-2 text-[9px] uppercase tracking-[1.8px] text-burgundy/40">{group.label}</div><div className="grid grid-cols-2 gap-2">{group.items.map((id) => { const Icon = tabIcons[id]; return <button type="button" key={id} onClick={() => openTab(id)} className={`flex min-h-14 items-center gap-2 rounded-2xl border p-3 text-left text-sm ${tab === id ? 'border-burgundy bg-burgundy text-white' : 'border-black/8 bg-white/75 text-burgundy'}`}><Icon size={16}/><span>{tabLabel(id)}</span></button>; })}</div></div>)}
+            {filteredNavGroups.length === 0 && <div className="mb-4 rounded-2xl bg-white/65 p-4 text-center text-sm text-burgundy/55">Такого раздела нет. Попробуй другое слово.</div>}
+            <div className="grid grid-cols-2 gap-2 border-t border-black/8 pt-4"><button type="button" onClick={() => void rebuildSpecials()} className="rounded-2xl border bg-white/75 p-3 text-xs"><RefreshCw size={14} className="mr-1 inline"/>Синхронизация</button><button type="button" onClick={() => void logout()} className="rounded-2xl border bg-white/75 p-3 text-xs text-red-700"><LogOut size={14} className="mr-1 inline"/>Выйти</button></div>
+          </div>
+        </div>}
         <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-black/10 bg-[#f5eee9]/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_35px_-24px_rgba(0,0,0,.65)] backdrop-blur-xl md:hidden" aria-label="Основная мобильная навигация">{mobilePrimaryTabs.map((id) => { const Icon = tabIcons[id]; return <button type="button" key={id} onClick={() => openTab(id)} className={`flex min-h-16 flex-col items-center justify-center gap-1 text-[9px] ${tab === id ? 'text-burgundy' : 'text-ink/45'}`}><span className={`flex h-8 w-8 items-center justify-center rounded-xl ${tab === id ? 'bg-burgundy text-white shadow' : ''}`}><Icon size={16}/></span>{tabLabel(id)}</button>; })}<button type="button" onClick={() => setMobileMenuOpen(true)} className={`flex min-h-16 flex-col items-center justify-center gap-1 text-[9px] ${!mobilePrimaryTabs.includes(tab) ? 'text-burgundy' : 'text-ink/45'}`}><span className={`flex h-8 w-8 items-center justify-center rounded-xl ${!mobilePrimaryTabs.includes(tab) ? 'bg-burgundy text-white shadow' : ''}`}><Menu size={16}/></span>Ещё</button></nav>
       </div>
     </div>

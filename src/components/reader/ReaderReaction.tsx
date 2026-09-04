@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { MessageCircleHeart, Send, X } from 'lucide-react';
 import { recordReaderReaction } from '@/lib/readerApi';
@@ -30,6 +30,7 @@ function readFeedback(key: string): StoredFeedback {
 
 export default function ReaderReaction({ elementId, token, dark = false }: { elementId: string; token: string; dark?: boolean }) {
   const storageKey = `for-you-reaction:${elementId}`;
+  const pendingKey = `for-you-reaction-pending:${elementId}`;
   const initial = useRef(readFeedback(storageKey)).current;
   const [selected, setSelected] = useState(initial.emoji);
   const [note, setNote] = useState(initial.note);
@@ -40,23 +41,40 @@ export default function ReaderReaction({ elementId, token, dark = false }: { ele
   const [error, setError] = useState('');
   const reduced = useReducedMotion();
 
+  useEffect(() => {
+    const syncPending = async () => {
+      const raw = localStorage.getItem(pendingKey);
+      if (!raw || !navigator.onLine) return;
+      try {
+        const pending = JSON.parse(raw) as StoredFeedback;
+        await recordReaderReaction({ visitorId: visitorId(), elementId, emoji: pending.emoji || '💭', note: pending.note || '' }, token);
+        localStorage.removeItem(pendingKey);
+        setError('');
+      } catch { /* it will retry after the next online event */ }
+    };
+    void syncPending();
+    window.addEventListener('online', syncPending);
+    return () => window.removeEventListener('online', syncPending);
+  }, [elementId, pendingKey, token]);
+
   async function saveFeedback(emoji = selected || '💭', nextNote = note.trim()) {
     if (busy || (!emoji && !nextNote)) return;
-    const previous = { emoji: selected, note: savedNote };
     setSelected(emoji);
+    setSavedNote(nextNote);
+    setNote(nextNote);
+    localStorage.setItem(storageKey, JSON.stringify({ emoji, note: nextNote }));
+    localStorage.setItem(pendingKey, JSON.stringify({ emoji, note: nextNote }));
     setBusy(true);
     setError('');
     try {
       await recordReaderReaction({ visitorId: visitorId(), elementId, emoji, note: nextNote }, token);
-      localStorage.setItem(storageKey, JSON.stringify({ emoji, note: nextNote }));
-      setSavedNote(nextNote);
-      setNote(nextNote);
+      localStorage.removeItem(pendingKey);
       setThankYou(true);
       window.setTimeout(() => setThankYou(false), 1800);
     } catch {
-      setSelected(previous.emoji);
-      setSavedNote(previous.note);
-      setError('Не сохранилось. Попробуй ещё раз.');
+      setThankYou(true);
+      window.setTimeout(() => setThankYou(false), 1800);
+      setError('Сохранено на этом телефоне. Отправлю, когда появится связь.');
     } finally {
       setBusy(false);
     }
@@ -74,7 +92,7 @@ export default function ReaderReaction({ elementId, token, dark = false }: { ele
         {selected && <span className="text-base">{selected}</span>}
       </button>
       {savedNote && <p className={`mx-auto mt-2 line-clamp-2 max-w-[300px] text-xs leading-relaxed ${muted}`}>«{savedNote}»</p>}
-      <div aria-live="polite" className={`mt-1 h-4 font-script text-sm ${muted}`}>{thankYou ? 'я это почувствовал ♡' : ''}</div>
+      <div aria-live="polite" className={`mt-1 h-4 font-script text-sm ${muted}`}>{thankYou ? 'сохраню это как ещё один кусочек нашей истории ♡' : ''}</div>
     </div>
   );
 
@@ -90,7 +108,7 @@ export default function ReaderReaction({ elementId, token, dark = false }: { ele
       <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={600} placeholder="Напиши, что вспомнилось или что ты думаешь…" className={`mt-4 min-h-24 w-full resize-y rounded-2xl border p-3 text-base outline-none ${dark ? 'border-white/10 bg-black/20 text-white placeholder:text-white/25 focus:border-gold/40' : 'border-burgundy/10 bg-white/65 text-ink placeholder:text-burgundy/30 focus:border-burgundy/30'}`} />
       <div className="mt-2 flex items-center justify-between gap-3"><span className="text-[10px] opacity-35">{note.length}/600</span><button type="button" disabled={busy || (!selected && !note.trim())} onClick={() => void saveFeedback()} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-gold px-4 py-2 text-xs font-medium text-[#1A1209] disabled:opacity-40"><Send size={13}/>{busy ? 'Сохраняю…' : 'Сохранить'}</button></div>
       {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
-      <div aria-live="polite" className={`mt-2 h-4 font-script text-sm ${muted}`}>{thankYou ? 'я это почувствовал ♡' : ''}</div>
+      <div aria-live="polite" className={`mt-2 min-h-4 font-script text-sm ${muted}`}>{thankYou ? 'сохраню это как ещё один кусочек нашей истории ♡' : ''}</div>
     </div>
   );
 }

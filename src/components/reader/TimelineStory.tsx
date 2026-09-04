@@ -5,6 +5,7 @@ import {
   BookOpen,
   ChevronUp,
   Gauge,
+  Heart,
   Map as MapIcon,
   Pause,
   Play,
@@ -37,6 +38,24 @@ interface LoaderState {
   progress: number;
   label: string;
   detail: string;
+}
+
+function StoryEnding() {
+  const reduced = useReducedMotion();
+  const [opened, setOpened] = useState(() => localStorage.getItem('for-you-ending-heart-v1') === '1');
+  function openHeart() {
+    localStorage.setItem('for-you-ending-heart-v1', '1');
+    setOpened(true);
+  }
+  return <section className="relative overflow-hidden bg-[#0B0B0D] px-6 pb-40 pt-24 text-center text-[#F4EFE6]">
+    <div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_50%_55%,rgba(151,61,92,.16),transparent_34%)]"/>
+    <div className="relative mx-auto max-w-sm">
+      <div className="mx-auto h-px w-20 bg-gold/50" />
+      <p className="mt-6 font-script text-3xl text-[#F4EFE6]/75">ты дошла до края этой страницы</p>
+      {!opened ? <button type="button" onClick={openHeart} className="group mx-auto mt-8 flex min-h-12 items-center gap-2 rounded-full border border-gold/25 bg-white/[.035] px-5 py-3 text-xs text-gold transition hover:border-gold/50 hover:bg-white/[.06]"><Heart size={16} className="transition group-hover:scale-110"/>Оставить здесь сердечко</button>
+        : <motion.div initial={reduced ? false : { opacity: 0, y: 12, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} className="mt-8 rounded-[28px] border border-gold/15 bg-white/[.035] px-6 py-7"><Heart size={20} fill="currentColor" className="mx-auto text-gold"/><p className="mt-4 font-serif text-xl leading-relaxed text-[#F4EFE6]/85">Спасибо, что читаешь. Для меня это не просто сайт — это место, где я бережно храню нас.</p><p className="mt-4 font-script text-2xl text-gold/70">продолжение обязательно будет ♡</p></motion.div>}
+    </div>
+  </section>;
 }
 
 const READING_PLACE_KEY = 'for-you-reading-place-v3';
@@ -466,7 +485,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
         {loadingMore && <div><div className="story-loader-ring mx-auto h-7 w-7"/><div className="mt-3 text-[10px] uppercase tracking-[2px]">готовлю следующие страницы</div></div>}
         {!loadingMore && moreError && <button type="button" onClick={() => void loadMore()} className="rounded-full border border-gold/25 px-5 py-3 text-xs text-gold">Загрузить дальше ещё раз</button>}
       </div>
-      {!hasMore && <div className="bg-[#0B0B0D] px-6 pb-40 pt-24 text-center text-[#F4EFE6]"><div className="mx-auto h-px w-20 bg-gold/50" /><p className="mt-6 font-script text-3xl text-[#F4EFE6]/75">продолжение следует</p><p className="mt-2 text-xs uppercase tracking-[2px] text-gold/40">новая глава появится здесь</p></div>}
+      {!hasMore && <StoryEnding />}
       <JourneyTools rows={rows} chapters={allChapters} onJump={jumpToElement} total={total} progress={readProgress} currentChapter={currentChapter} readingPlace={readingPlace} />
     </>}
   </div>;

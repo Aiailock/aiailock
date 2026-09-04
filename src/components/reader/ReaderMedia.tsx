@@ -45,6 +45,7 @@ export default function ReaderMedia({ row, token }: Props) {
     ? row.style.externalMediaKind
     : null;
   const kind = externalKind
+    ?? (row.type === 'gif' ? 'gif' : null)
     ?? row.media_kind
     ?? ((row.screenshot_id || row.memory_photo_storage_path) ? 'photo' : 'document');
   const requestedAudioStyle = typeof row.style?.audioPlayerStyle === 'string' ? row.style.audioPlayerStyle : '';

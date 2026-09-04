@@ -28,9 +28,7 @@ Deno.serve(async (req) => {
 
     if (!settings) return json({ token: await issueReaderToken(), expiresIn: 60 * 60 * 24 * 30 });
 
-    // Admin Preview is already protected by the authenticated owner check
-    // above, so it must not ask the owner for the separate reader password.
-    if (settings.reader_requires_password && !preview) {
+    if (settings.reader_requires_password) {
       const { data: valid, error: verifyError } = await db.rpc('verify_reader_password', { p_password: password });
       if (verifyError) throw new Error(verifyError.message);
       if (valid !== true) throw new HttpError(401, 'Неверный пароль.');

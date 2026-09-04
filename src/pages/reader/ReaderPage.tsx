@@ -157,7 +157,7 @@ export default function ReaderPage() {
               <br />Но место для неё уже есть.</p>
           </div>
         </section>
-      ) : <div id="story-start"><ReaderSettingsContext.Provider value={displaySettings}><TimelineStory token={token} track={!isPreview} preview={isPreview} /></ReaderSettingsContext.Provider></div>}
+      ) : <div id="story-start"><ReaderSettingsContext.Provider value={displaySettings}><TimelineStory token={token} track={!isPreview} /></ReaderSettingsContext.Provider></div>}
       <div className="px-6 pb-20 pt-8 text-center">
         <div className="mx-auto h-px w-16 bg-gold/45" />
         <p className="mt-4 font-script text-2xl text-[#F4EFE6]/55">{displaySettings.closingMessage}</p>

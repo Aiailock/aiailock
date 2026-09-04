@@ -4,22 +4,17 @@ import {
   Bookmark,
   BookOpen,
   ChevronUp,
-  Focus,
   Gauge,
   Heart,
   Map as MapIcon,
-  Pencil,
   Pause,
   Play,
   RotateCcw,
-  Rows3,
-  Search,
-  ShieldCheck,
   Sparkles,
   Type,
   X,
 } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PublicChapterSummary, PublicTimelineCursor, PublicTimelineRow } from '@/lib/readerApi';
 import {
   comparePublicTimelineRows,
@@ -30,8 +25,6 @@ import {
 } from '@/lib/readerApi';
 import { useReaderSettings } from '@/lib/readerSettingsContext';
 import StoryElement from './StoryElement';
-
-const ReaderPreviewEditor = lazy(() => import('@/pages/admin/ReaderPreviewEditor'));
 
 interface ReadingPlace {
   elementId: string;
@@ -68,22 +61,6 @@ function StoryEnding() {
 const READING_PLACE_KEY = 'for-you-reading-place-v3';
 const BOOKMARK_KEY = 'for-you-reader-bookmark-v1';
 const TEXT_SIZE_KEY = 'for-you-reader-text-size-v1';
-const READER_DENSITY_KEY = 'for-you-reader-density-v1';
-const READER_FOCUS_KEY = 'for-you-reader-focus-v1';
-
-function searchableRowText(row: PublicTimelineRow) {
-  return [
-    row.sender_name,
-    row.original_text,
-    row.display_text,
-    row.memory_title,
-    row.memory_body,
-    row.screenshot_title,
-    row.screenshot_caption,
-    row.screenshot_description,
-    ...Object.values(row.metadata ?? {}).filter((value): value is string => typeof value === 'string'),
-  ].filter(Boolean).join(' ').toLocaleLowerCase('ru');
-}
 
 function savedReadingPlace(): ReadingPlace | null {
   try {
@@ -166,36 +143,17 @@ function JourneyTools({
   const [open, setOpen] = useState(false);
   const [autoScroll, setAutoScroll] = useState(false);
   const [textSize, setTextSize] = useState(() => localStorage.getItem(TEXT_SIZE_KEY) || 'normal');
-  const [density, setDensity] = useState(() => localStorage.getItem(READER_DENSITY_KEY) || 'normal');
-  const [focusMode, setFocusMode] = useState(() => localStorage.getItem(READER_FOCUS_KEY) === '1');
-  const [searchQuery, setSearchQuery] = useState('');
   const [bookmark, setBookmark] = useState<ReadingPlace | null>(() => {
     try { return JSON.parse(localStorage.getItem(BOOKMARK_KEY) ?? '') as ReadingPlace; } catch { return null; }
   });
   const [bookmarkSaved, setBookmarkSaved] = useState(false);
   const minutesLeft = Math.max(1, Math.ceil((((total ?? rows.length) * (100 - progress)) / 100) * 0.18));
-  const searchResults = useMemo(() => {
-    const query = searchQuery.trim().toLocaleLowerCase('ru');
-    return query ? rows.filter((row) => searchableRowText(row).includes(query)).slice(0, 12) : [];
-  }, [rows, searchQuery]);
 
   useEffect(() => {
     document.documentElement.dataset.readerText = textSize;
     localStorage.setItem(TEXT_SIZE_KEY, textSize);
     return () => { delete document.documentElement.dataset.readerText; };
   }, [textSize]);
-
-  useEffect(() => {
-    document.documentElement.dataset.readerDensity = density;
-    localStorage.setItem(READER_DENSITY_KEY, density);
-    return () => { delete document.documentElement.dataset.readerDensity; };
-  }, [density]);
-
-  useEffect(() => {
-    document.documentElement.dataset.readerFocus = focusMode ? 'true' : 'false';
-    localStorage.setItem(READER_FOCUS_KEY, focusMode ? '1' : '0');
-    return () => { delete document.documentElement.dataset.readerFocus; };
-  }, [focusMode]);
 
   useEffect(() => {
     if (!autoScroll) return;
@@ -245,14 +203,8 @@ function JourneyTools({
                 <button type="button" onClick={saveBookmark} disabled={!readingPlace} className="rounded-2xl bg-white/[.055] p-3 text-left disabled:opacity-35"><span className="flex items-center gap-2 text-gold"><Bookmark size={15}/> Закладка</span><span className="mt-1 block text-[10px] text-white/35">{bookmarkSaved ? 'место сохранено' : 'сохранить это место'}</span></button>
                 <button type="button" onClick={nextChapter} className="rounded-2xl bg-white/[.055] p-3 text-left"><span className="flex items-center gap-2 text-gold"><ArrowDown size={15}/> Дальше</span><span className="mt-1 block text-[10px] text-white/35">к следующей главе</span></button>
                 <button type="button" onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); setOpen(false); }} className="rounded-2xl bg-white/[.055] p-3 text-left"><span className="flex items-center gap-2 text-gold"><ChevronUp size={15}/> В начало</span><span className="mt-1 block text-[10px] text-white/35">вернуться к обложке</span></button>
-                <button type="button" onClick={() => setFocusMode((value) => !value)} className="col-span-2 rounded-2xl bg-white/[.055] p-3 text-left"><span className="flex items-center gap-2 text-gold"><Focus size={15}/> Фокус на сцене</span><span className="mt-1 block text-[10px] text-white/35">{focusMode ? 'включён — соседние сцены приглушены' : 'читать одну сцену без визуального шума'}</span></button>
               </div>
               <div className="mt-3 rounded-2xl bg-white/[.04] p-3"><div className="flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-white/60"><Type size={14}/> Размер текста</span><div className="flex rounded-full bg-black/25 p-1">{[['small','А'],['normal','Аа'],['large','АА']].map(([id,label]) => <button type="button" key={id} onClick={() => setTextSize(id)} className={`rounded-full px-2.5 py-1 text-[10px] ${textSize === id ? 'bg-gold text-black' : 'text-white/45'}`}>{label}</button>)}</div></div></div>
-              <div className="mt-3 rounded-2xl bg-white/[.04] p-3"><div className="flex items-center justify-between gap-3 text-xs"><span className="flex items-center gap-2 text-white/60"><Rows3 size={14}/> Плотность</span><div className="flex rounded-full bg-black/25 p-1">{[['compact','Плотно'],['normal','Обычно'],['cinematic','Кино']].map(([id,label]) => <button type="button" key={id} onClick={() => setDensity(id)} className={`rounded-full px-2 py-1 text-[9px] ${density === id ? 'bg-gold text-black' : 'text-white/45'}`}>{label}</button>)}</div></div></div>
-              <div className="mt-3 rounded-2xl bg-white/[.04] p-3">
-                <label className="flex items-center gap-2 rounded-xl bg-black/20 px-3"><Search size={14} className="text-gold/65"/><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Найти фразу в загруженной истории…" className="min-w-0 flex-1 border-0 bg-transparent py-2.5 text-xs text-white outline-none placeholder:text-white/25"/></label>
-                {searchQuery.trim() && <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">{searchResults.length > 0 ? searchResults.map((row) => <button type="button" key={row.element_id} onClick={() => { void onJump(row.element_id); setOpen(false); }} className="w-full rounded-xl px-3 py-2 text-left hover:bg-white/[.06]"><span className="block text-[9px] uppercase tracking-[1.5px] text-gold/55">{row.type}</span><span className="mt-0.5 block truncate text-xs text-white/65">{searchableRowText(row) || 'Сцена без текста'}</span></button>) : <div className="px-2 py-3 text-center text-[10px] text-white/35">В загруженной части совпадений нет.</div>}</div>}
-              </div>
               {bookmark?.elementId && <button type="button" onClick={() => { void onJump(bookmark.elementId, bookmark.position); setOpen(false); }} className="mt-3 flex w-full items-center justify-between rounded-2xl border border-gold/15 px-4 py-3 text-left text-xs text-gold/75"><span><Bookmark size={13} className="mr-2 inline"/>Открыть сохранённую закладку</span><span>{bookmark.progress}%</span></button>}
               {chapters.length > 0 && <div className="mt-4"><div className="mb-2 text-[9px] uppercase tracking-[2px] text-white/30">все главы · {chapters.length}</div><div className="space-y-1">{chapters.map((chapter, index) => <button type="button" key={chapter.elementId} onClick={() => { void onJump(chapter.elementId, chapter.storyPosition); setOpen(false); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm hover:bg-white/[.06]"><span className="flex h-6 w-6 items-center justify-center rounded-full border border-gold/20 text-[9px] text-gold/65">{index + 1}</span><span className="min-w-0 flex-1 truncate font-serif text-base">{chapter.title}</span></button>)}</div></div>}
             </motion.div>
@@ -269,7 +221,7 @@ function JourneyTools({
   );
 }
 
-export default function TimelineStory({ token, track = true, preview = false }: { token: string; track?: boolean; preview?: boolean }) {
+export default function TimelineStory({ token, track = true }: { token: string; track?: boolean }) {
   const previewTargetElementId = useMemo(() => {
     const value = new URLSearchParams(window.location.search).get('element');
     return value && /^[0-9a-f-]{36}$/i.test(value) ? value : null;
@@ -289,9 +241,6 @@ export default function TimelineStory({ token, track = true, preview = false }: 
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState('');
-  const [activeElementId, setActiveElementId] = useState('');
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
-  const [editMode, setEditMode] = useState(preview);
   const runId = useRef(0);
   const cursorRef = useRef<PublicTimelineCursor | null>(null);
   const hasMoreRef = useRef(false);
@@ -300,7 +249,6 @@ export default function TimelineStory({ token, track = true, preview = false }: 
   const reportTimer = useRef(0);
   const visitId = useRef(crypto.randomUUID());
   const lastReported = useRef({ id: '', progress: 0 });
-  const previewTargetOpened = useRef(false);
 
   const setPaging = useCallback((cursor: PublicTimelineCursor | null, nextHasMore: boolean) => {
     cursorRef.current = cursor;
@@ -349,14 +297,12 @@ export default function TimelineStory({ token, track = true, preview = false }: 
   }, [loadJourney, retryKey]);
 
   useEffect(() => {
-    if (previewTargetOpened.current || booting || !previewTargetElementId || !rows.some((row) => row.element_id === previewTargetElementId)) return;
-    previewTargetOpened.current = true;
-    if (preview) setSelectedElementId(previewTargetElementId);
+    if (booting || !previewTargetElementId || !rows.some((row) => row.element_id === previewTargetElementId)) return;
     const firstFrame = window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => scrollToElement(previewTargetElementId, 'auto'));
     });
     return () => window.cancelAnimationFrame(firstFrame);
-  }, [booting, preview, previewTargetElementId, rows]);
+  }, [booting, previewTargetElementId, rows]);
 
   const loadMore = useCallback(async () => {
     const cursor = cursorRef.current;
@@ -488,32 +434,6 @@ export default function TimelineStory({ token, track = true, preview = false }: 
     return result;
   }, [positionOffset, readingPlace?.chapter, renderedRows]);
 
-  const selectedIndex = useMemo(() => renderedRows.findIndex((item) => item.row.element_id === selectedElementId), [renderedRows, selectedElementId]);
-  const selectedItem = selectedIndex >= 0 ? renderedRows[selectedIndex] : null;
-
-  const previewRow = useCallback((next: PublicTimelineRow) => {
-    setRows((current) => current.map((row) => row.element_id === next.element_id ? next : row));
-  }, []);
-
-  const refreshEditedRow = useCallback(async (elementId: string) => {
-    const result = await fetchResumeTimeline(elementId, token);
-    const fresh = new Map(result.elements.map((row) => [row.element_id, row]));
-    setRows((current) => current.map((row) => fresh.get(row.element_id) ?? row));
-    setAllChapters(result.chapters);
-    if (result.total !== null) setTotal(result.total);
-  }, [token]);
-
-  const navigatePreviewEditor = useCallback((direction: -1 | 1) => {
-    if (selectedIndex < 0) return;
-    const next = renderedRows[selectedIndex + direction];
-    if (!next) return;
-    setSelectedElementId(next.row.element_id);
-    const url = new URL(window.location.href);
-    url.searchParams.set('element', next.row.element_id);
-    window.history.replaceState(null, '', url);
-    scrollToElement(next.row.element_id);
-  }, [renderedRows, selectedIndex]);
-
   useEffect(() => {
     if (!track || booting) return;
     const key = 'for-you-reader-id';
@@ -525,9 +445,9 @@ export default function TimelineStory({ token, track = true, preview = false }: 
   }, [token, track, booting]);
 
   useEffect(() => {
-    if (booting || renderedRows.length === 0) return;
-    const visitorId = track ? localStorage.getItem('for-you-reader-id') : null;
-    if (track && !visitorId) return;
+    if (!track || booting || renderedRows.length === 0) return;
+    const visitorId = localStorage.getItem('for-you-reader-id');
+    if (!visitorId) return;
     const elements = Array.from(document.querySelectorAll<HTMLElement>('[data-reader-element]'));
     const observer = new IntersectionObserver((entries) => {
       const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
@@ -536,17 +456,15 @@ export default function TimelineStory({ token, track = true, preview = false }: 
       const elementId = target.dataset.readerElement ?? '';
       const meta = elementMeta.get(elementId);
       if (!elementId || !meta) return;
-      setActiveElementId(elementId);
       const denominator = total ?? Math.max(meta.position, positionOffset + rows.length + (hasMore ? 1 : 0));
       const progress = Math.max(1, Math.min(100, Math.round((meta.position / Math.max(1, denominator)) * 100)));
-      setReadProgress((current) => track ? Math.max(current, progress) : progress);
+      setReadProgress((current) => Math.max(current, progress));
       if (meta.chapter) setCurrentChapter(meta.chapter);
-      if (track && meta.position > 0) {
+      if (meta.position > 0) {
         const place = { elementId, position: meta.position, progress, chapter: meta.chapter };
         localStorage.setItem(READING_PLACE_KEY, JSON.stringify(place));
         setReadingPlace(place);
       }
-      if (!track || !visitorId) return;
       if (lastReported.current.id === elementId && progress <= lastReported.current.progress) return;
       lastReported.current = { id: elementId, progress };
       window.clearTimeout(reportTimer.current);
@@ -571,29 +489,18 @@ export default function TimelineStory({ token, track = true, preview = false }: 
 
   return <div className="w-full">
     <AnimatePresence>{booting && <JourneyLoader state={loader} onRetry={() => setRetryKey((value) => value + 1)} />}</AnimatePresence>
-    {preview && !booting && <div className="fixed left-3 top-3 z-[70] flex max-w-[calc(100vw-24px)] items-center gap-2 rounded-2xl border border-white/15 bg-[#171218]/92 p-2 text-[#F4EFE6] shadow-2xl backdrop-blur-xl">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gold/12 text-gold"><ShieldCheck size={15}/></span>
-      <span className="hidden min-w-0 sm:block"><span className="block text-[9px] uppercase tracking-[1.5px] text-gold/55">защищённый preview</span><span className="block truncate text-[10px] text-white/45">нажми «Изменить» у сцены</span></span>
-      <button type="button" disabled={Boolean(selectedItem)} onClick={() => setEditMode((value) => !value)} className={`shrink-0 rounded-xl px-3 py-2 text-[10px] ${editMode ? 'bg-gold text-[#171218]' : 'bg-white/8 text-white/65'} disabled:opacity-35`}><Pencil size={12} className="mr-1 inline"/>{editMode ? 'Редактирование' : 'Включить правки'}</button>
-      <a href="/admin#admin-timeline" className="shrink-0 rounded-xl border border-white/10 px-3 py-2 text-[10px] text-white/65">В админку</a>
-    </div>}
     {!booting && rows.length === 0 && <div className="mx-auto max-w-md px-6 py-28 text-center font-serif text-2xl opacity-55">Здесь пока пусто.</div>}
     {!booting && rows.length > 0 && <>
       <div className="pointer-events-none fixed inset-x-0 top-0 z-40 h-px bg-white/5"><div className="h-full bg-gold/80 transition-[width] duration-700" style={{ width: `${readProgress}%` }} /></div>
-      {currentChapter && !preview && <div className="pointer-events-none fixed inset-x-0 top-3 z-30 text-center"><span className="inline-block max-w-[78vw] truncate rounded-full bg-black/35 px-4 py-1.5 text-[9px] uppercase tracking-[2px] text-gold/65 backdrop-blur-md">{currentChapter}</span></div>}
+      {currentChapter && <div className="pointer-events-none fixed inset-x-0 top-3 z-30 text-center"><span className="inline-block max-w-[78vw] truncate rounded-full bg-black/35 px-4 py-1.5 text-[9px] uppercase tracking-[2px] text-gold/65 backdrop-blur-md">{currentChapter}</span></div>}
       {showResumeCard && readingPlace && <div className="flex min-h-[24vh] items-center justify-center bg-[#0B0B0D] px-6"><button type="button" disabled={resumeLoading} onClick={() => void resumeFromSavedPlace()} className="group border-y border-gold/25 px-7 py-6 text-center text-[#F4EFE6] transition hover:border-gold/50 disabled:opacity-55"><BookOpen className="mx-auto text-gold/70" size={20}/><span className="mt-3 block font-serif text-xl">{resumeLoading ? 'Открываю это место…' : 'Продолжить с места'}</span><span className="mt-1 block text-[10px] uppercase tracking-[2px] text-white/35">прочитано {readingPlace.progress}%{readingPlace.chapter ? ` · ${readingPlace.chapter}` : ''}</span></button></div>}
-      {chunks.map((chunk, chunkIndex) => <div className="story-page-chunk" key={chunk[0]?.row.element_id ?? chunkIndex}>{chunk.map(({ row, galleryRows, position }) => <div key={row.screenshot_collection_id ?? row.element_id} data-reader-element={row.element_id} data-reader-position={position} data-reader-active={activeElementId === row.element_id ? 'true' : 'false'} className={`reader-scene-shell relative ${activeElementId === row.element_id ? 'is-reader-active' : ''} ${selectedElementId === row.element_id ? 'is-preview-selected' : ''}`}>
-        <span aria-hidden="true" className="reader-scene-index">{String(position).padStart(2, '0')}</span>
-        {preview && editMode && <button type="button" onClick={() => setSelectedElementId(row.element_id)} className="preview-scene-edit"><Pencil size={13}/>Изменить</button>}
-        <StoryElement row={row} galleryRows={galleryRows} token={token} />
-      </div>)}</div>)}
+      {chunks.map((chunk, chunkIndex) => <div className="story-page-chunk" key={chunk[0]?.row.element_id ?? chunkIndex}>{chunk.map(({ row, galleryRows, position }) => <div key={row.screenshot_collection_id ?? row.element_id} data-reader-element={row.element_id} data-reader-position={position}><StoryElement row={row} galleryRows={galleryRows} token={token} /></div>)}</div>)}
       <div ref={sentinelRef} className="flex min-h-24 items-center justify-center bg-[#0B0B0D] px-6 text-center text-[#F4EFE6]/45">
         {loadingMore && <div><div className="story-loader-ring mx-auto h-7 w-7"/><div className="mt-3 text-[10px] uppercase tracking-[2px]">готовлю следующие страницы</div></div>}
         {!loadingMore && moreError && <button type="button" onClick={() => void loadMore()} className="rounded-full border border-gold/25 px-5 py-3 text-xs text-gold">Загрузить дальше ещё раз</button>}
       </div>
       {!hasMore && <StoryEnding />}
       <JourneyTools rows={rows} chapters={allChapters} onJump={jumpToElement} total={total} progress={readProgress} currentChapter={currentChapter} readingPlace={readingPlace} />
-      {preview && selectedItem && <Suspense fallback={<div className="fixed bottom-3 right-3 z-[90] rounded-2xl bg-white p-4 text-xs text-burgundy shadow-2xl">Открываю редактор…</div>}><ReaderPreviewEditor key={selectedItem.row.element_id} row={selectedItem.row} position={selectedItem.position} total={total ?? renderedRows.length} canGoPrevious={selectedIndex > 0} canGoNext={selectedIndex < renderedRows.length - 1} onPreview={previewRow} onClose={(original) => { previewRow(original); setSelectedElementId(null); }} onSaved={refreshEditedRow} onNavigate={navigatePreviewEditor}/></Suspense>}
     </>}
   </div>;
 }

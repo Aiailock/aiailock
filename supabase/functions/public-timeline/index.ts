@@ -37,15 +37,14 @@ Deno.serve(async (req) => {
     const previewBatchId = typeof body.previewBatchId === 'string' && UUID_RE.test(body.previewBatchId)
       ? body.previewBatchId
       : null;
-    const adminPreview = body.adminPreview === true;
-    if (previewBatchId || adminPreview) await assertAdmin(req);
+    if (previewBatchId) await assertAdmin(req);
 
     const cursor = body.cursor && typeof body.cursor === 'object' ? body.cursor as {
       displayOrder?: number;
       id?: string;
     } : undefined;
 
-    const table = previewBatchId || adminPreview ? 'reader_timeline_preview_data' : 'reader_timeline_data';
+    const table = previewBatchId ? 'reader_timeline_preview_data' : 'reader_timeline_data';
     let query = db
       .from(table)
       .select('*')
@@ -102,7 +101,7 @@ Deno.serve(async (req) => {
 
     // The preview view has two helper columns that are not part of PublicTimelineRow.
     const rows = (data ?? []).map((row: Record<string, unknown>) => {
-      if (!previewBatchId && !adminPreview) return row;
+      if (!previewBatchId) return row;
       const { ai_batch_id: _batch, is_reader_visible: _visible, ...publicRow } = row;
       return publicRow;
     });
@@ -120,7 +119,6 @@ Deno.serve(async (req) => {
       } : null,
       resumedFrom: resumeElementId,
       previewBatchId,
-      adminPreview,
       chapters,
       total: totalResult.count ?? rows.length,
     });

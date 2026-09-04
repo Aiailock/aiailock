@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { Mic2, Music2, Play, RotateCcw, Sparkles, WandSparkles } from 'lucide-react';
+import { Mic2, Music2, Play, Sparkles } from 'lucide-react';
 import { Frame, bgByZone } from '@/components/reader/StoryElement';
 import EffectsLayer from '@/components/reader/EffectsLayer';
 import DateStamp from '@/components/reader/DateStamp';
 import { ALIGN_OPTIONS, ANIMATION_OPTIONS, DATE_STYLE_OPTIONS, DECORATION_OPTIONS, FONT_OPTIONS, FRAME_OPTIONS, SPACING_OPTIONS, ZONE_OPTIONS } from '@/lib/styleOptions';
 import { TIME_FORMAT_OPTIONS } from '@/lib/readerSettingsContext';
 import { safeRemoteUrl } from '@/lib/safeUrl';
-import { recommendedStyleForText } from '@/lib/nextSceneAdvisor';
 
 export interface StyleValue {
   frame?: string;
@@ -41,17 +40,6 @@ export const AUDIO_PLAYER_STYLE_OPTIONS = [
   { id: 'minimal', label: 'Минималистичный плеер' },
 ] as const;
 
-const QUICK_STYLE_PRESETS: Array<{ id: string; label: string; hint: string; style: StyleValue }> = [
-  { id: 'diary', label: 'Дневник', hint: 'спокойно и лично', style: { zone: 'default', frame: 'minimal', font: 'literata', dateStyle: 'handwritten', dateFont: 'badscript', spacing: 'normal', animation: 'fade-up' } },
-  { id: 'tender', label: 'Нежность', hint: 'лепестки и свет', style: { zone: 'romantic', frame: 'hearts', font: 'badscript', dateStyle: 'centered', dateAlign: 'center', textAlign: 'center', decoration: ['petals'], spacing: 'cinematic', animation: 'fade' } },
-  { id: 'night', label: 'Ночь', hint: 'звёзды и глубина', style: { zone: 'night', frame: 'moonlit', font: 'badscript', dateStyle: 'capsule', decoration: ['stardust'], spacing: 'cinematic', animation: 'blur' } },
-  { id: 'letter', label: 'Письмо', hint: 'бумага и чернила', style: { zone: 'sepia', frame: 'envelope', font: 'marck', dateStyle: 'handwritten', decoration: [], spacing: 'cinematic', animation: 'fade-up' } },
-  { id: 'cinema', label: 'Кино', hint: 'контрастный кадр', style: { zone: 'burgundy', frame: 'film', font: 'yeseva', dateStyle: 'split', spacing: 'cinematic', animation: 'zoom' } },
-  { id: 'party', label: 'Праздник', hint: 'ярко и живо', style: { zone: 'gif', frame: 'garland', font: 'comfort', dateStyle: 'ribbon', dateAlign: 'center', decoration: ['confetti'], spacing: 'cinematic', animation: 'zoom' } },
-  { id: 'quiet', label: 'Тишина', hint: 'воздух и свечи', style: { zone: 'dusk', frame: 'minimal', font: 'literata', dateStyle: 'line', decoration: ['candles'], spacing: 'cinematic', animation: 'fade' } },
-  { id: 'chat', label: 'Переписка', hint: 'как экран телефона', style: { zone: 'default', frame: 'phone', font: 'sans', dateStyle: 'capsule', spacing: 'compact', animation: 'slide-left' } },
-];
-
 const fontClassByOption: Record<string, string> = {
   serif: 'font-serif', script: 'font-script', sans: 'font-sans', pixel: 'font-pixel', mono: 'font-mono',
   literata: 'font-literata', yeseva: 'font-yeseva', comfort: 'font-comfort',
@@ -79,7 +67,6 @@ export default function StyleEditor({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [rawJson, setRawJson] = useState(() => JSON.stringify(value ?? {}, null, 2));
   const [rawError, setRawError] = useState('');
-  const [beforeQuickStyle, setBeforeQuickStyle] = useState<StyleValue | null>(null);
 
   const frame = value.frame ?? 'minimal';
   const zone = value.zone ?? 'default';
@@ -105,18 +92,6 @@ export default function StyleEditor({
     onChange(merged);
     setRawJson(JSON.stringify(merged, null, 2));
   }
-  function applyQuickStyle(next: StyleValue) {
-    setBeforeQuickStyle(value);
-    const merged = { ...value, ...next };
-    onChange(merged);
-    setRawJson(JSON.stringify(merged, null, 2));
-  }
-  function restoreQuickStyle() {
-    if (!beforeQuickStyle) return;
-    onChange(beforeQuickStyle);
-    setRawJson(JSON.stringify(beforeQuickStyle, null, 2));
-    setBeforeQuickStyle(null);
-  }
   function toggleDecoration(id: string) {
     const set = new Set(decoration);
     if (set.has(id)) set.delete(id); else set.add(id);
@@ -133,14 +108,6 @@ export default function StyleEditor({
   return (
     <div className="rounded-2xl border border-black/10 bg-[#FBF8F5] p-4">
       <div className="flex items-center gap-2 text-sm font-medium text-burgundy"><Sparkles size={15} /> Оформление элемента</div>
-
-      <div className="mt-3 rounded-2xl border border-burgundy/8 bg-white/70 p-3">
-        <div className="flex items-center justify-between gap-3"><div><div className="text-xs font-medium text-burgundy">Быстрый стиль в одно нажатие</div><div className="mt-0.5 text-[10px] text-ink/45">После выбора все параметры ниже остаются доступными.</div></div>{beforeQuickStyle && <button type="button" onClick={restoreQuickStyle} className="flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1.5 text-[10px] text-burgundy"><RotateCcw size={11}/>Вернуть</button>}</div>
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-          <button type="button" onClick={() => applyQuickStyle(recommendedStyleForText(`${actualPreviewTitle}\n${actualPreviewText}`) as StyleValue)} className="min-w-[126px] shrink-0 rounded-2xl border border-gold/30 bg-gradient-to-br from-burgundy to-[#241018] p-3 text-left text-white shadow-sm"><WandSparkles size={14} className="text-gold"/><span className="mt-2 block text-xs font-medium">Подобрать</span><span className="mt-1 block text-[9px] text-white/50">по смыслу текста</span></button>
-          {QUICK_STYLE_PRESETS.map((preset) => <button type="button" key={preset.id} onClick={() => applyQuickStyle(preset.style)} className="min-w-[126px] shrink-0 rounded-2xl border border-black/8 bg-[#FBF8F5] p-3 text-left transition hover:border-burgundy/25"><span className="block text-xs font-medium text-burgundy">{preset.label}</span><span className="mt-1 block text-[9px] text-ink/45">{preset.hint}</span></button>)}
-        </div>
-      </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <label className="block text-xs">

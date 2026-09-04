@@ -1,5 +1,5 @@
 import { corsHeaders } from '../_shared/cors.ts';
-import { serviceClient, assertAdmin, HttpError } from '../_shared/db.ts';
+import { serviceClient, HttpError } from '../_shared/db.ts';
 import { verifyReaderToken } from '../_shared/readerToken.ts';
 
 declare const Deno: { serve: (h: (r: Request) => Response | Promise<Response>) => void };
@@ -36,8 +36,6 @@ Deno.serve(async (req) => {
     await checkReaderAccess(req, db);
     const body = await req.json().catch(() => ({}));
     const backgroundMusic = body.backgroundMusic === true;
-    const adminPreview = body.adminPreview === true;
-    if (adminPreview) await assertAdmin(req);
     const mediaId = typeof body.mediaId === 'string' ? body.mediaId : null;
     const screenshotId = typeof body.screenshotId === 'string' ? body.screenshotId : null;
     const memoryId = typeof body.memoryId === 'string' ? body.memoryId : null;
@@ -66,16 +64,14 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (memoryError) throw new Error(memoryError.message);
       if (!memory?.photo_storage_path) throw new HttpError(404, 'Фотография воспоминания не найдена.');
-      if (!adminPreview) {
-        const { data: published, error: publishedError } = await db
-          .from('reader_timeline_data')
-          .select('element_id')
-          .eq('memory_id', memoryId)
-          .eq('is_published', true)
-          .maybeSingle();
-        if (publishedError) throw new Error(publishedError.message);
-        if (!published) throw new HttpError(403, 'Доступ к этому файлу пока не открыт.');
-      }
+      const { data: published, error: publishedError } = await db
+        .from('reader_timeline_data')
+        .select('element_id')
+        .eq('memory_id', memoryId)
+        .eq('is_published', true)
+        .maybeSingle();
+      if (publishedError) throw new Error(publishedError.message);
+      if (!published) throw new HttpError(403, 'Доступ к этому файлу пока не открыт.');
       const { data: signed, error: signError } = await db.storage.from('screenshots').createSignedUrl(memory.photo_storage_path, SIGNED_URL_TTL_SECONDS);
       if (signError || !signed) throw new Error(signError?.message ?? 'Не удалось создать ссылку.');
       return json({ url: signed.signedUrl, thumbnailUrl: null, expiresIn: SIGNED_URL_TTL_SECONDS });
@@ -89,16 +85,14 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (error) throw new Error(error.message);
       if (!screenshot?.storage_path) throw new HttpError(404, 'Скриншот не найден.');
-      if (!adminPreview) {
-        const { data: published, error: publishedError } = await db
-          .from('reader_timeline_data')
-          .select('element_id')
-          .eq('screenshot_id', screenshotId)
-          .eq('is_published', true)
-          .maybeSingle();
-        if (publishedError) throw new Error(publishedError.message);
-        if (!published) throw new HttpError(403, 'Доступ к этому файлу пока не открыт.');
-      }
+      const { data: published, error: publishedError } = await db
+        .from('reader_timeline_data')
+        .select('element_id')
+        .eq('screenshot_id', screenshotId)
+        .eq('is_published', true)
+        .maybeSingle();
+      if (publishedError) throw new Error(publishedError.message);
+      if (!published) throw new HttpError(403, 'Доступ к этому файлу пока не открыт.');
       const { data: signed, error: signError } = await db.storage.from('screenshots').createSignedUrl(screenshot.storage_path, SIGNED_URL_TTL_SECONDS);
       if (signError || !signed) throw new Error(signError?.message ?? 'Не удалось создать ссылку.');
       return json({ url: signed.signedUrl, thumbnailUrl: null, expiresIn: SIGNED_URL_TTL_SECONDS });
@@ -112,16 +106,14 @@ Deno.serve(async (req) => {
     if (mediaError) throw new Error(mediaError.message);
     if (!media || media.status !== 'stored' || !media.storage_path) throw new HttpError(404, 'Медиафайл не найден или ещё не сохранён.');
 
-    if (!adminPreview) {
-      const { data: published, error: publishedError } = await db
-        .from('reader_timeline_data')
-        .select('element_id')
-        .eq('media_id', media.id)
-        .eq('is_published', true)
-        .maybeSingle();
-      if (publishedError) throw new Error(publishedError.message);
-      if (!published) throw new HttpError(403, 'Доступ к этому файлу пока не открыт.');
-    }
+    const { data: published, error: publishedError } = await db
+      .from('reader_timeline_data')
+      .select('element_id')
+      .eq('media_id', media.id)
+      .eq('is_published', true)
+      .maybeSingle();
+    if (publishedError) throw new Error(publishedError.message);
+    if (!published) throw new HttpError(403, 'Доступ к этому файлу пока не открыт.');
 
     const bucket = BUCKET_BY_KIND[media.kind];
     if (!bucket) throw new Error(`Неизвестный тип медиа: ${media.kind}`);

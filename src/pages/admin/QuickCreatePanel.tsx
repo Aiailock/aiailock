@@ -10,8 +10,6 @@ import { INTERACTION_OPTIONS } from '@/lib/styleOptions';
 import VoiceRecorder from '@/components/admin/VoiceRecorder';
 import CommonsMediaSearch, { type CommonsAsset } from '@/components/admin/CommonsMediaSearch';
 import { downloadRemoteGif, MAX_GIF_BYTES } from '@/lib/remoteMedia';
-import NextSceneAdvisor from '@/components/admin/NextSceneAdvisor';
-import type { NextSceneSuggestion } from '@/lib/nextSceneAdvisor';
 
 type CreateKind = 'note' | 'memory' | 'special' | 'chapter' | 'quote' | 'pause' | 'album' | 'gif' | 'video' | 'voice' | 'music' | 'link' | 'interactive';
 
@@ -50,7 +48,6 @@ interface Draft {
   visibleFrom: string;
   interaction: string;
   gifUrl: string;
-  gifQuery: string;
   externalUrl: string;
   linkOpenMode: 'external' | 'preview';
   musicMode: 'upload' | 'url';
@@ -72,7 +69,7 @@ interface Draft {
 
 const DRAFT_KEY = 'for-you-mobile-studio-draft-v1';
 const nowForInput = () => new Date().toISOString().slice(0, 16);
-const emptyDraft = (): Draft => ({ kind: 'note', title: '', body: '', occurredAt: nowForInput(), style: { dateStyle: 'line', spacing: 'normal', animation: 'fade-up' }, published: true, visibleFrom: '', interaction: 'gift', gifUrl: '', gifQuery: '', externalUrl: '', linkOpenMode: 'external', musicMode: 'upload', artist: '', audioPlayerStyle: 'vinyl', selectedSong: null, albumLayout: 'carousel', reactionEmoji: '❤', reactionText: '', optionA: 'Да', optionB: 'Конечно', optionC: 'Очень', optionD: 'Расскажу позже', resultA: '', resultB: '', resultC: '', resultD: '' });
+const emptyDraft = (): Draft => ({ kind: 'note', title: '', body: '', occurredAt: nowForInput(), style: { dateStyle: 'line', spacing: 'normal', animation: 'fade-up' }, published: true, visibleFrom: '', interaction: 'gift', gifUrl: '', externalUrl: '', linkOpenMode: 'external', musicMode: 'upload', artist: '', audioPlayerStyle: 'vinyl', selectedSong: null, albumLayout: 'carousel', reactionEmoji: '❤', reactionText: '', optionA: 'Да', optionB: 'Конечно', optionC: 'Очень', optionD: 'Расскажу позже', resultA: '', resultB: '', resultC: '', resultD: '' });
 
 const ROMANTIC_TEMPLATES: Array<{ label: string; hint: string; value: Partial<Draft>; style: StyleValue }> = [
   {
@@ -160,8 +157,6 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
   const [gifSelection, setGifSelection] = useState<CommonsAsset | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [queuedSuggestion, setQueuedSuggestion] = useState<NextSceneSuggestion | null>(null);
-  const [createdElementId, setCreatedElementId] = useState<string | null>(null);
   const selectedKind = useMemo(() => KINDS.find((kind) => kind.id === draft.kind) ?? KINDS[0], [draft.kind]);
   const previews = useMemo(() => files.map((file) => ({ file, url: URL.createObjectURL(file) })), [files]);
 
@@ -172,7 +167,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
     return () => window.clearTimeout(timer);
   }, [draft]);
 
-  function patch(next: Partial<Draft>) { setDraft((current) => ({ ...current, ...next })); setMessage(''); setCreatedElementId(null); }
+  function patch(next: Partial<Draft>) { setDraft((current) => ({ ...current, ...next })); setMessage(''); }
   function chooseKind(kind: CreateKind) {
     if (kind !== draft.kind) { setFiles([]); setCoverFile(null); setGifSelection(null); }
     patch({ kind, ...(kind === 'voice' ? { audioPlayerStyle: 'voice' } : kind === 'music' ? { audioPlayerStyle: 'vinyl' } : {}) });
@@ -189,26 +184,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
     }));
     setMessage('Заготовка готова. Перепиши слова под себя — оформление уже настроено.');
   }
-  function reset() { const next = emptyDraft(); setDraft(next); setFiles([]); setCoverFile(null); setGifSelection(null); setQueuedSuggestion(null); setCreatedElementId(null); localStorage.removeItem(DRAFT_KEY); setMessage('Новый чистый черновик готов.'); }
-  function queueNextScene(suggestion: NextSceneSuggestion) {
-    setQueuedSuggestion(suggestion);
-    setMessage(`Следующий черновик «${suggestion.title || KINDS.find((item) => item.id === suggestion.kind)?.label || 'Новая сцена'}» подготовлен. Сначала сохрани текущую страницу — она не потеряется.`);
-  }
-  function draftFromSuggestion(suggestion: NextSceneSuggestion, sourceText: string): Draft {
-    const next = emptyDraft();
-    const excerpt = sourceText.trim().split(/(?<=[.!?])\s+/)[0]?.slice(0, 220) ?? '';
-    return {
-      ...next,
-      kind: suggestion.kind,
-      title: suggestion.title,
-      body: suggestion.body || (suggestion.kind === 'quote' || suggestion.kind === 'special' ? excerpt : ''),
-      style: { ...next.style, ...suggestion.style },
-      interaction: suggestion.interaction || next.interaction,
-      gifQuery: suggestion.query || '',
-      published: false,
-      occurredAt: new Date(Date.now() + 60_000).toISOString().slice(0, 16),
-    };
-  }
+  function reset() { const next = emptyDraft(); setDraft(next); setFiles([]); setCoverFile(null); setGifSelection(null); localStorage.removeItem(DRAFT_KEY); setMessage('Новый чистый черновик готов.'); }
   function selectFiles(incoming: File[]) {
     const isVideo = draft.kind === 'video';
     const isAudio = draft.kind === 'music' || draft.kind === 'voice';
@@ -236,7 +212,6 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
     setBusy(true);
     setMessage('');
     try {
-      let newElementId: string | null = null;
       if (!draft.occurredAt) throw new Error('Укажи дату страницы.');
       const occurredAt = `${draft.occurredAt}Z`;
       const visibleFrom = draft.visibleFrom ? new Date(draft.visibleFrom).toISOString() : null;
@@ -244,7 +219,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
       const style: StyleValue = { ...draft.style };
       if (draft.kind === 'voice') {
         if (!files[0]) throw new Error('Запиши голосовое или выбери готовый аудиофайл.');
-        newElementId = await createManualAudio({
+        await createManualAudio({
           file: files[0],
           title: draft.title.trim() || 'Голосовое сообщение',
           caption: draft.body,
@@ -261,7 +236,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         if (draft.musicMode === 'url') {
           const fullUrl = safeRemoteUrl(draft.externalUrl);
           if (!fullUrl) throw new Error('Вставь прямую ссылку на полный аудиофайл MP3/M4A/OGG.');
-          const { data, error } = await supabase.from('timeline_elements').insert({
+          const { error } = await supabase.from('timeline_elements').insert({
             type: 'audio', occurred_at: occurredAt, sort_tiebreak: 6,
             style: { zone: 'night', frame: 'minimal', spacing: 'cinematic', ...style, audioPlayerStyle: draft.audioPlayerStyle || 'vinyl', externalMediaUrl: fullUrl, externalMediaKind: 'audio' },
             ...visibility,
@@ -276,12 +251,11 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
               body: draft.body.trim() || null,
               musicSource: 'full-url',
             },
-          }).select('id').single();
+          });
           if (error) throw error;
-          newElementId = String(data.id);
         } else {
           if (!files[0]) throw new Error('Выбери аудиофайл.');
-          newElementId = await createManualAudio({
+          await createManualAudio({
             file: files[0],
             coverFile,
             coverUrl: safeRemoteUrl(song?.artworkUrl),
@@ -301,7 +275,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         const externalUrl = safeRemoteUrl(draft.externalUrl);
         if (files.length === 0 && !externalUrl) throw new Error('Выбери видеофайл или вставь прямую ссылку на видео.');
         if (files[0]) {
-          newElementId = await createManualVideo({
+          await createManualVideo({
             file: files[0],
             title: draft.title,
             caption: draft.body,
@@ -311,19 +285,18 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
             visibleFrom,
           });
         } else {
-          const { data, error } = await supabase.from('timeline_elements').insert({
+          const { error } = await supabase.from('timeline_elements').insert({
             type: 'video', occurred_at: occurredAt, sort_tiebreak: 5,
             style: { zone: 'default', frame: 'film', spacing: 'cinematic', ...style, externalMediaUrl: externalUrl, externalMediaKind: 'video' },
             ...visibility,
             metadata: { title: draft.title.trim() || null, body: draft.body.trim() || null },
-          }).select('id').single();
+          });
           if (error) throw error;
-          newElementId = String(data.id);
         }
       } else if (draft.kind === 'link') {
         const url = safeRemoteUrl(draft.externalUrl);
         if (!url) throw new Error('Вставь полную ссылку, начинающуюся с https:// или http://.');
-        const { data, error } = await supabase.from('timeline_elements').insert({
+        const { error } = await supabase.from('timeline_elements').insert({
           type: 'link', occurred_at: occurredAt, sort_tiebreak: 15,
           style: { zone: 'dusk', spacing: 'cinematic', ...style },
           ...visibility,
@@ -333,30 +306,27 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
             description: draft.body.trim() || null,
             openMode: draft.linkOpenMode,
           },
-        }).select('id').single();
+        });
         if (error) throw error;
-        newElementId = String(data.id);
       } else if (draft.kind === 'chapter') {
         if (!draft.title.trim()) throw new Error('Напиши название главы.');
         const { count } = await supabase.from('timeline_elements').select('*', { count: 'exact', head: true }).eq('type', 'chapter');
-        const { data, error } = await supabase.from('timeline_elements').insert({
+        const { error } = await supabase.from('timeline_elements').insert({
           type: 'chapter', occurred_at: occurredAt, sort_tiebreak: -20,
           style, ...visibility,
           metadata: { title: draft.title.trim(), subtitle: draft.body.trim() || null, number: Number(count ?? 0) + 1 },
-        }).select('id').single();
+        });
         if (error) throw error;
-        newElementId = String(data.id);
       } else if (draft.kind === 'quote' || draft.kind === 'pause') {
         if (draft.kind === 'quote' && !draft.body.trim()) throw new Error('Напиши текст цитаты.');
-        const { data, error } = await supabase.from('timeline_elements').insert({
+        const { error } = await supabase.from('timeline_elements').insert({
           type: draft.kind, occurred_at: occurredAt, sort_tiebreak: draft.kind === 'quote' ? -10 : 20,
           style: { zone: 'default', spacing: 'cinematic', ...style }, ...visibility,
           metadata: draft.kind === 'quote'
             ? { quote: draft.body.trim(), author: draft.title.trim() || null }
             : { text: draft.body.trim() || null },
-        }).select('id').single();
+        });
         if (error) throw error;
-        newElementId = String(data.id);
       } else if (draft.kind === 'note') {
         if (!draft.body.trim()) throw new Error('Напиши текст записи.');
         const id = crypto.randomUUID();
@@ -368,9 +338,6 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         if (error) throw error;
         const { error: timelineError } = await supabase.from('timeline_elements').update({ style, ...visibility }).eq('message_id', id);
         if (timelineError) throw timelineError;
-        const { data: timeline, error: findError } = await supabase.from('timeline_elements').select('id').eq('message_id', id).single();
-        if (findError || !timeline?.id) throw findError ?? new Error('Запись не появилась в истории.');
-        newElementId = String(timeline.id);
       } else if (draft.kind === 'album') {
         if (files.length === 0) throw new Error('Выбери один или несколько скриншотов.');
         if (files.length > 12) throw new Error('В одном альбоме можно максимум 12 изображений.');
@@ -398,9 +365,6 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         }
         const { error: visibilityError } = await supabase.from('timeline_elements').update(visibility).in('screenshot_id', ids);
         if (visibilityError) throw visibilityError;
-        const { data: timeline, error: findError } = await supabase.from('timeline_elements').select('id').eq('screenshot_id', ids[0]).single();
-        if (findError || !timeline?.id) throw findError ?? new Error('Альбом не появился в истории.');
-        newElementId = String(timeline.id);
       } else {
         const isGif = draft.kind === 'gif';
         if (!isGif && !draft.body.trim()) throw new Error('Напиши текст момента.');
@@ -430,22 +394,10 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
         if (error) throw error;
         const { error: visibilityError } = await supabase.from('timeline_elements').update(visibility).eq('memory_id', id);
         if (visibilityError) throw visibilityError;
-        const { data: timeline, error: findError } = await supabase.from('timeline_elements').select('id').eq('memory_id', id).single();
-        if (findError || !timeline?.id) throw findError ?? new Error('Сцена не появилась в истории.');
-        newElementId = String(timeline.id);
       }
 
-      setCreatedElementId(newElementId);
-      if (queuedSuggestion) {
-        const nextDraft = draftFromSuggestion(queuedSuggestion, draft.body);
-        setDraft(nextDraft);
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(nextDraft));
-        setMessage('Текущая страница сохранена. Следующий предложенный черновик уже открыт и специально оставлен неопубликованным.');
-        setQueuedSuggestion(null);
-      } else {
-        localStorage.removeItem(DRAFT_KEY);
-        setMessage('Готово — страница добавлена. Её можно сразу открыть в Reader Preview и редактировать прямо там.');
-      }
+      localStorage.removeItem(DRAFT_KEY);
+      setMessage('Готово — страница уже добавлена в историю. Можно сразу открыть Preview или продолжить редактирование.');
       setFiles([]);
       setCoverFile(null);
       setGifSelection(null);
@@ -476,8 +428,6 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
 
         <input value={draft.title} onChange={(event) => patch({ title: event.target.value })} placeholder={draft.kind === 'chapter' ? 'Название главы' : draft.kind === 'quote' ? 'Автор или подпись (необязательно)' : draft.kind === 'interactive' && ['question','choice'].includes(draft.interaction) ? 'Напиши сам вопрос' : 'Название (необязательно)'} className="mt-4 w-full rounded-xl border p-3" />
         <textarea value={draft.body} onChange={(event) => patch({ body: event.target.value })} placeholder={draft.kind === 'chapter' ? 'Короткая фраза под названием' : draft.kind === 'quote' ? 'Та самая фраза…' : draft.kind === 'pause' ? 'Несколько тихих слов — или оставь пустым' : draft.kind === 'interactive' && ['question','choice'].includes(draft.interaction) ? 'Общий красивый ответ, если отдельный вариант ниже оставлен пустым' : draft.kind === 'interactive' ? 'Что откроется после нажатия?' : draft.kind === 'album' ? 'Общая подпись к альбому' : draft.kind === 'video' ? 'Подпись под видео (необязательно)' : draft.kind === 'voice' ? 'Подпись к голосовому (необязательно)' : draft.kind === 'music' ? 'Почему эта песня здесь или подпись к аудио' : draft.kind === 'link' ? 'Коротко объясни, куда ведёт ссылка' : 'Текст страницы'} className="mt-3 min-h-36 w-full rounded-xl border p-3" />
-        <NextSceneAdvisor text={`${draft.title}\n${draft.body}`} onApply={queueNextScene} />
-        {queuedSuggestion && <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900"><span className="min-w-0">После сохранения откроется: <b>{queuedSuggestion.title || KINDS.find((item) => item.id === queuedSuggestion.kind)?.label}</b></span><button type="button" onClick={() => setQueuedSuggestion(null)} className="shrink-0 rounded-lg border border-emerald-700/20 bg-white px-2 py-1">Отменить</button></div>}
         <input type="datetime-local" value={draft.occurredAt} onChange={(event) => patch({ occurredAt: event.target.value })} className="mt-3 w-full rounded-xl border p-3" />
 
         {(draft.kind === 'memory' || draft.kind === 'special' || draft.kind === 'gif' || draft.kind === 'video' || draft.kind === 'interactive' || draft.kind === 'album') && <div className="mt-3 rounded-xl border border-dashed border-burgundy/15 bg-[#FBF8F5] p-3 text-sm">
@@ -511,7 +461,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
           </label>
         </div>}
         {draft.kind === 'gif' && <div className="mt-3 space-y-3">
-          <CommonsMediaSearch kind="gif" initialQuery={draft.gifQuery} value={gifSelection} onChange={(asset) => { setGifSelection(asset); patch({ gifUrl: asset.url }); }} />
+          <CommonsMediaSearch kind="gif" value={gifSelection} onChange={(asset) => { setGifSelection(asset); patch({ gifUrl: asset.url }); }} />
           <label className="block text-sm">Или прямая ссылка на GIF<input value={draft.gifUrl} inputMode="url" onChange={(event) => { setGifSelection(null); patch({ gifUrl: event.target.value }); }} placeholder="https://…/animation.gif" className="mt-2 w-full rounded-xl border p-3" /></label>
         </div>}
         {draft.kind === 'video' && <label className="mt-3 block text-sm">Или прямая ссылка на MP4/WebM<input value={draft.externalUrl} inputMode="url" onChange={(event) => patch({ externalUrl: event.target.value })} placeholder="https://…/video.mp4" className="mt-2 w-full rounded-xl border p-3" /><span className="mt-1 block text-[10px] opacity-45">Если выбран файл, будет загружен именно он. Ссылка используется только без файла.</span></label>}
@@ -521,7 +471,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
 
         <div className="mt-4 rounded-2xl bg-black/[.025] p-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.published} onChange={(event) => patch({ published: event.target.checked })} disabled={Boolean(draft.visibleFrom)} /> Сразу показать ей в reader</label><label className="mt-3 block text-xs text-burgundy/65">Или открыть автоматически позже<input type="datetime-local" value={draft.visibleFrom} onChange={(event) => patch({ visibleFrom: event.target.value })} className="mt-2 w-full rounded-xl border p-3 text-sm" /><span className="mt-1 block text-[10px] opacity-60">Если дата указана, сцена останется скрытой до этого момента.</span></label></div>
         <div className="sticky bottom-[72px] z-20 -mx-2 mt-4 grid grid-cols-[1fr_auto] gap-2 rounded-2xl border border-black/8 bg-white/95 p-2 shadow-xl backdrop-blur sm:static sm:mx-0 sm:flex sm:flex-wrap sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none"><button disabled={busy} className="rounded-xl bg-burgundy px-5 py-3 text-sm text-white shadow disabled:opacity-45"><Save size={15} className="mr-1 inline" />{busy ? 'Добавляю…' : `Добавить: ${selectedKind.label}`}</button><button type="button" onClick={reset} className="rounded-xl border px-4 py-3 text-sm">Очистить</button></div>
-        {message && <div className={`mt-4 rounded-xl p-3 text-sm ${message.startsWith('Готово') || message.startsWith('Текущая страница') ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-900'}`}>{message}{createdElementId && <div className="mt-3 flex flex-wrap gap-2"><a href={`/?preview=1&element=${encodeURIComponent(createdElementId)}`} target="_blank" rel="noreferrer" className="rounded-lg bg-emerald-800 px-3 py-2 text-xs text-white">Открыть в Reader и редактировать</a><button type="button" onClick={onOpenTimeline} className="rounded-lg border border-emerald-700/20 bg-white/60 px-3 py-2 text-xs">Открыть в Истории</button></div>}</div>}
+        {message && <div className={`mt-4 rounded-xl p-3 text-sm ${message.startsWith('Готово') ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-900'}`}>{message}{message.startsWith('Готово') && <button type="button" onClick={onOpenTimeline} className="mt-3 block rounded-lg border border-emerald-700/20 bg-white/60 px-3 py-2 text-xs">Открыть и редактировать в Истории</button>}</div>}
       </form>
 
       <div className="min-w-0 space-y-4">

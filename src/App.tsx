@@ -4,10 +4,10 @@ import ReaderPage from './pages/reader/ReaderPage';
 
 const AdminApp = lazy(() => import('./pages/admin/AdminApp'));
 
-// The public reader and admin stay split into separate route chunks. The only
-// admin surface reachable from the reader is an additional lazy chunk loaded
-// for the authenticated `?preview=1` owner workflow; normal readers never
-// render it.
+// Top-level split kept intentionally simple: the reader route tree has zero
+// knowledge of admin concepts (no imports, no "admin", no ids in the URL),
+// and the admin route tree is entirely separate and gated by auth further
+// down (see pages/admin/AdminApp.tsx, built out in the admin stage).
 export default function App() {
   return (
     <BrowserRouter>

@@ -6,10 +6,6 @@ function activeAiPreviewBatchId(): string | null {
   return value && /^[0-9a-f-]{36}$/i.test(value) ? value : null;
 }
 
-function activeAdminPreview(): boolean {
-  return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('preview') === '1';
-}
-
 export interface PublicTimelineCursor {
   displayOrder: number;
   occurredAt: string;
@@ -110,7 +106,7 @@ export async function fetchPublicTimeline(cursor: PublicTimelineCursor | null, t
   total: number | null;
 }> {
   const { data, error } = await supabase.functions.invoke('public-timeline', {
-    body: { cursor, previewBatchId: activeAiPreviewBatchId(), adminPreview: activeAdminPreview() },
+    body: { cursor, previewBatchId: activeAiPreviewBatchId() },
     headers: token ? { 'x-reader-access-token': token } : undefined,
   });
   if (error || data?.error) throw new Error(error?.message ?? data?.error ?? 'Не удалось загрузить историю.');
@@ -136,7 +132,7 @@ export async function fetchResumeTimeline(elementId: string, token: string): Pro
   total: number | null;
 }> {
   const { data, error } = await supabase.functions.invoke('public-timeline', {
-    body: { resumeElementId: elementId, previewBatchId: activeAiPreviewBatchId(), adminPreview: activeAdminPreview() },
+    body: { resumeElementId: elementId, previewBatchId: activeAiPreviewBatchId() },
     headers: token ? { 'x-reader-access-token': token } : undefined,
   });
   if (error || data?.error) throw new Error(error?.message ?? data?.error ?? 'Не удалось продолжить историю.');
@@ -321,7 +317,7 @@ export async function fetchMediaUrl(input: ReaderMediaInput, token: string): Pro
   if (pending) return pending;
 
   const request = supabase.functions.invoke('get-media-url', {
-    body: { ...input, adminPreview: activeAdminPreview() },
+    body: input,
     headers: token ? { 'x-reader-access-token': token } : undefined,
   }).then(({ data, error }) => {
     if (error || data?.error || !data?.url) throw new Error(error?.message ?? data?.error ?? 'Не удалось открыть медиа.');

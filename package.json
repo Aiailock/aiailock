@@ -13,9 +13,8 @@
     "test:media": "node --import tsx server/media/selfTest.ts",
     "test:ai": "node --import tsx server/ai/selfTest.ts",
     "test:director": "node --import tsx server/ai/directorSelfTest.ts",
-    "test:next-scene": "node --import tsx server/ai/nextSceneSelfTest.ts",
     "test:gif": "node --import tsx server/reader/gifSearchSelfTest.ts",
-    "test": "npm run test:parser && npm run test:media && npm run test:ai && npm run test:director && npm run test:next-scene && npm run test:gif"
+    "test": "npm run test:parser && npm run test:media && npm run test:ai && npm run test:director && npm run test:gif"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

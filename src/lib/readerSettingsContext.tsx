@@ -16,23 +16,7 @@ export type DateStyleId = 'line' | 'centered' | 'ribbon' | 'handwritten' | 'caps
 export type LoaderStyleId = 'hearts' | 'sparkles' | 'minimal';
 export type MotionModeId = 'auto' | 'full' | 'lite';
 export type BackgroundMusicModeId = 'built_in' | 'custom' | 'off';
-export type ReaderModeId = 'scroll' | 'book-horizontal' | 'book-vertical';
-export type BookOrientationId = 'horizontal' | 'vertical';
-
-export function normalizeReaderMode(value: string | null | undefined): ReaderModeId {
-  if (value === 'scroll' || value === 'book-vertical' || value === 'book-horizontal') return value;
-  // 0024 stored the old value as simply `book`. Keep every existing reader on
-  // the same left-to-right book instead of resetting her preference.
-  return 'book-horizontal';
-}
-
-export function isBookReaderMode(mode: ReaderModeId): boolean {
-  return mode !== 'scroll';
-}
-
-export function bookOrientation(mode: ReaderModeId): BookOrientationId {
-  return mode === 'book-vertical' ? 'vertical' : 'horizontal';
-}
+export type ReaderModeId = 'scroll' | 'book';
 
 export const TIME_FORMAT_OPTIONS: { id: TimeFormatId; label: string; hint: string }[] = [
   { id: 'default', label: 'Обычный', hint: '3 марта 2024 · 21:40' },

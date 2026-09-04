@@ -1,7 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { splitBookText } from '../../src/lib/bookPagination.ts';
 import { curatedGifMatches, gifSearchTerms } from '../../src/lib/gifSearch.ts';
-import { bookOrientation, normalizeReaderMode } from '../../src/lib/readerSettingsContext.tsx';
 
 let passed = 0;
 function check(name: string, run: () => void) {
@@ -38,14 +37,4 @@ check('встроенная GIF-полка никогда не пустая', ()
   assert.ok(results.every((item) => item.url.endsWith('.gif')));
 });
 
-check('старый режим book безопасно переезжает в горизонтальную книгу', () => {
-  assert.equal(normalizeReaderMode('book'), 'book-horizontal');
-  assert.equal(bookOrientation(normalizeReaderMode('book')), 'horizontal');
-});
-
-check('вертикальная книга сохраняет отдельное направление листа', () => {
-  assert.equal(normalizeReaderMode('book-vertical'), 'book-vertical');
-  assert.equal(bookOrientation('book-vertical'), 'vertical');
-});
-
-console.log(`Book + GIF self-test: ${passed}/7 passed`);
+console.log(`Book + GIF self-test: ${passed}/5 passed`);

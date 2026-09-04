@@ -1,8 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowDown,
-  ArrowLeftRight,
-  ArrowUpDown,
   Bookmark,
   BookOpen,
   ChevronUp,
@@ -26,7 +24,7 @@ import {
   preloadTimelineMedia,
   recordReaderAnalytics,
 } from '@/lib/readerApi';
-import { bookOrientation, isBookReaderMode, useReaderSettings, type ReaderModeId } from '@/lib/readerSettingsContext';
+import { useReaderSettings, type ReaderModeId } from '@/lib/readerSettingsContext';
 import StoryElement from './StoryElement';
 import BookTimeline from './BookTimeline';
 
@@ -165,7 +163,7 @@ function JourneyTools({
   const minutesLeft = Math.max(1, Math.ceil((((total ?? rows.length) * (100 - progress)) / 100) * 0.18));
 
   useEffect(() => {
-    if (isBookReaderMode(readingMode)) setAutoScroll(false);
+    if (readingMode === 'book') setAutoScroll(false);
   }, [readingMode]);
 
   useEffect(() => {
@@ -218,13 +216,13 @@ function JourneyTools({
             <motion.div initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12 }} className="mb-2 max-h-[68vh] overflow-y-auto rounded-[28px] border border-white/10 bg-[#131116]/95 p-4 text-[#F4EFE6] shadow-2xl backdrop-blur-2xl">
               <div className="flex items-center justify-between"><div><div className="text-[9px] uppercase tracking-[2.5px] text-gold/55">карта путешествия</div><div className="mt-1 font-serif text-xl">{currentChapter || 'Вся история'}</div></div><button type="button" aria-label="Закрыть" onClick={() => setOpen(false)} className="rounded-full bg-white/[.06] p-2 text-white/55"><X size={16}/></button></div>
               <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                <button type="button" disabled={isBookReaderMode(readingMode)} onClick={() => setAutoScroll((value) => !value)} className="rounded-2xl bg-white/[.055] p-3 text-left disabled:opacity-35"><span className="flex items-center gap-2 text-gold">{autoScroll ? <Pause size={15}/> : <Play size={15}/>} Авточтение</span><span className="mt-1 block text-[10px] text-white/35">{isBookReaderMode(readingMode) ? 'доступно в режиме ленты' : autoScroll ? 'остановить движение' : 'медленно листать'}</span></button>
+                <button type="button" disabled={readingMode === 'book'} onClick={() => setAutoScroll((value) => !value)} className="rounded-2xl bg-white/[.055] p-3 text-left disabled:opacity-35"><span className="flex items-center gap-2 text-gold">{autoScroll ? <Pause size={15}/> : <Play size={15}/>} Авточтение</span><span className="mt-1 block text-[10px] text-white/35">{readingMode === 'book' ? 'доступно в режиме ленты' : autoScroll ? 'остановить движение' : 'медленно листать'}</span></button>
                 <button type="button" onClick={saveBookmark} disabled={!readingPlace} className="rounded-2xl bg-white/[.055] p-3 text-left disabled:opacity-35"><span className="flex items-center gap-2 text-gold"><Bookmark size={15}/> Закладка</span><span className="mt-1 block text-[10px] text-white/35">{bookmarkSaved ? 'место сохранено' : 'сохранить это место'}</span></button>
                 <button type="button" onClick={nextChapter} className="rounded-2xl bg-white/[.055] p-3 text-left"><span className="flex items-center gap-2 text-gold"><ArrowDown size={15}/> Дальше</span><span className="mt-1 block text-[10px] text-white/35">к следующей главе</span></button>
                 <button type="button" onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); setOpen(false); }} className="rounded-2xl bg-white/[.055] p-3 text-left"><span className="flex items-center gap-2 text-gold"><ChevronUp size={15}/> В начало</span><span className="mt-1 block text-[10px] text-white/35">вернуться к обложке</span></button>
               </div>
               <div className="mt-3 rounded-2xl bg-white/[.04] p-3"><div className="flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-white/60"><Type size={14}/> Размер текста</span><div className="flex rounded-full bg-black/25 p-1">{[['small','А'],['normal','Аа'],['large','АА']].map(([id,label]) => <button type="button" key={id} onClick={() => setTextSize(id)} className={`rounded-full px-2.5 py-1 text-[10px] ${textSize === id ? 'bg-gold text-black' : 'text-white/45'}`}>{label}</button>)}</div></div></div>
-              <div className="mt-3 rounded-2xl bg-white/[.04] p-3"><div className="text-xs text-white/60">Режим чтения</div><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => { onReadingModeChange('book-horizontal'); setOpen(false); }} className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs ${readingMode === 'book-horizontal' ? 'bg-gold text-black' : 'bg-black/20 text-white/55'}`}><ArrowLeftRight size={14}/>Вбок</button><button type="button" onClick={() => { onReadingModeChange('book-vertical'); setOpen(false); }} className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs ${readingMode === 'book-vertical' ? 'bg-gold text-black' : 'bg-black/20 text-white/55'}`}><ArrowUpDown size={14}/>Вверх</button><button type="button" onClick={() => { onReadingModeChange('scroll'); setOpen(false); }} className={`col-span-2 flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs ${readingMode === 'scroll' ? 'bg-gold text-black' : 'bg-black/20 text-white/55'}`}><ScrollText size={14}/>Обычная лента</button></div></div>
+              <div className="mt-3 rounded-2xl bg-white/[.04] p-3"><div className="text-xs text-white/60">Режим чтения</div><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => { onReadingModeChange('book'); setOpen(false); }} className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs ${readingMode === 'book' ? 'bg-gold text-black' : 'bg-black/20 text-white/55'}`}><BookOpen size={14}/>Книга</button><button type="button" onClick={() => { onReadingModeChange('scroll'); setOpen(false); }} className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs ${readingMode === 'scroll' ? 'bg-gold text-black' : 'bg-black/20 text-white/55'}`}><ScrollText size={14}/>Лента</button></div></div>
               {bookmark?.elementId && <button type="button" onClick={() => { void onJump(bookmark.elementId, bookmark.position); setOpen(false); }} className="mt-3 flex w-full items-center justify-between rounded-2xl border border-gold/15 px-4 py-3 text-left text-xs text-gold/75"><span><Bookmark size={13} className="mr-2 inline"/>Открыть сохранённую закладку</span><span>{bookmark.progress}%</span></button>}
               {chapters.length > 0 && <div className="mt-4"><div className="mb-2 text-[9px] uppercase tracking-[2px] text-white/30">все главы · {chapters.length}</div><div className="space-y-1">{chapters.map((chapter, index) => <button type="button" key={chapter.elementId} onClick={() => { void onJump(chapter.elementId, chapter.storyPosition); setOpen(false); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm hover:bg-white/[.06]"><span className="flex h-6 w-6 items-center justify-center rounded-full border border-gold/20 text-[9px] text-gold/65">{index + 1}</span><span className="min-w-0 flex-1 truncate font-serif text-base">{chapter.title}</span></button>)}</div></div>}
             </motion.div>
@@ -352,7 +350,7 @@ export default function TimelineStory({ token, track = true, readingMode = 'scro
     if (!readingPlace || resumeLoading) return;
     if (rows.some((row) => row.element_id === readingPlace.elementId)) {
       setShowResumeCard(false);
-      if (isBookReaderMode(readingMode)) setBookTargetElementId(readingPlace.elementId);
+      if (readingMode === 'book') setBookTargetElementId(readingPlace.elementId);
       else scrollToElement(readingPlace.elementId);
       return;
     }
@@ -370,7 +368,7 @@ export default function TimelineStory({ token, track = true, readingMode = 'scro
       setReadProgress((current) => Math.max(current, readingPlace.progress));
       setShowResumeCard(false);
       void preloadTimelineMedia(nearestVisualMedia(ordered), token);
-      if (isBookReaderMode(readingMode)) setBookTargetElementId(readingPlace.elementId);
+      if (readingMode === 'book') setBookTargetElementId(readingPlace.elementId);
       else window.requestAnimationFrame(() => window.requestAnimationFrame(() => scrollToElement(readingPlace.elementId, 'auto')));
     } catch (error) {
       setMoreError(error instanceof Error ? error.message : 'Сохранённое место пока не открылось.');
@@ -381,7 +379,7 @@ export default function TimelineStory({ token, track = true, readingMode = 'scro
 
   const jumpToElement = useCallback(async (elementId: string, position?: number) => {
     if (rows.some((row) => row.element_id === elementId)) {
-      if (isBookReaderMode(readingMode)) setBookTargetElementId(elementId);
+      if (readingMode === 'book') setBookTargetElementId(elementId);
       else scrollToElement(elementId);
       return;
     }
@@ -398,7 +396,7 @@ export default function TimelineStory({ token, track = true, readingMode = 'scro
       if (result.total !== null) setTotal(result.total);
       setPaging(result.nextCursor, result.hasMore);
       void preloadTimelineMedia(nearestVisualMedia(ordered), token);
-      if (isBookReaderMode(readingMode)) setBookTargetElementId(elementId);
+      if (readingMode === 'book') setBookTargetElementId(elementId);
       else window.requestAnimationFrame(() => window.requestAnimationFrame(() => scrollToElement(elementId, 'auto')));
     } catch (error) {
       setMoreError(error instanceof Error ? error.message : 'Не удалось открыть выбранную главу.');
@@ -478,7 +476,7 @@ export default function TimelineStory({ token, track = true, readingMode = 'scro
     if (previousReadingMode.current === readingMode) return;
     previousReadingMode.current = readingMode;
     if (booting || showResumeCard || !readingPlace) return;
-    if (isBookReaderMode(readingMode)) setBookTargetElementId(readingPlace.elementId);
+    if (readingMode === 'book') setBookTargetElementId(readingPlace.elementId);
     else window.requestAnimationFrame(() => scrollToElement(readingPlace.elementId, 'auto'));
   }, [booting, readingMode, readingPlace, showResumeCard]);
 
@@ -520,10 +518,9 @@ export default function TimelineStory({ token, track = true, readingMode = 'scro
       <div className="pointer-events-none fixed inset-x-0 top-0 z-40 h-px bg-white/5"><div className="h-full bg-gold/80 transition-[width] duration-700" style={{ width: `${readProgress}%` }} /></div>
       {currentChapter && <div className="pointer-events-none fixed inset-x-0 top-3 z-30 text-center"><span className="inline-block max-w-[78vw] truncate rounded-full bg-black/35 px-4 py-1.5 text-[9px] uppercase tracking-[2px] text-gold/65 backdrop-blur-md">{currentChapter}</span></div>}
       {showResumeCard && readingPlace && <div className="flex min-h-[24vh] items-center justify-center bg-[#0B0B0D] px-6"><button type="button" disabled={resumeLoading} onClick={() => void resumeFromSavedPlace()} className="group border-y border-gold/25 px-7 py-6 text-center text-[#F4EFE6] transition hover:border-gold/50 disabled:opacity-55"><BookOpen className="mx-auto text-gold/70" size={20}/><span className="mt-3 block font-serif text-xl">{resumeLoading ? 'Открываю это место…' : 'Продолжить с места'}</span><span className="mt-1 block text-[10px] uppercase tracking-[2px] text-white/35">прочитано {readingPlace.progress}%{readingPlace.chapter ? ` · ${readingPlace.chapter}` : ''}</span></button></div>}
-      {isBookReaderMode(readingMode) ? <BookTimeline
+      {readingMode === 'book' ? <BookTimeline
         items={renderedRows}
         token={token}
-        orientation={bookOrientation(readingMode)}
         hasMore={hasMore}
         loadingMore={loadingMore}
         moreError={moreError}

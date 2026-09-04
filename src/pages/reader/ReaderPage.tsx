@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeftRight, ArrowUpDown, Heart, LockKeyhole, ScrollText, Sparkles } from 'lucide-react';
+import { BookOpen, Heart, LockKeyhole, ScrollText, Sparkles } from 'lucide-react';
 import TimelineStory from '@/components/reader/TimelineStory';
 import { fetchReaderSettings, requestReaderAccess } from '@/lib/readerApi';
-import { normalizeReaderMode, ReaderSettingsContext, prefersLiteReaderMotion, readDisplaySettingsFromTheme, type ReaderDisplaySettings, type ReaderModeId } from '@/lib/readerSettingsContext';
+import { ReaderSettingsContext, prefersLiteReaderMotion, readDisplaySettingsFromTheme, type ReaderDisplaySettings, type ReaderModeId } from '@/lib/readerSettingsContext';
 import { safeRemoteUrl } from '@/lib/safeUrl';
 import BackgroundMusic from '@/components/reader/BackgroundMusic';
 
@@ -11,7 +11,7 @@ const DISPLAY_SETTINGS_KEY = 'for-you-display-settings-v1';
 const READER_MODE_KEY = 'for-you-reader-mode-v1';
 
 function savedReaderMode(): ReaderModeId {
-  return normalizeReaderMode(localStorage.getItem(READER_MODE_KEY));
+  return localStorage.getItem(READER_MODE_KEY) === 'scroll' ? 'scroll' : 'book';
 }
 
 function cachedDisplaySettings(): ReaderDisplaySettings {
@@ -167,9 +167,8 @@ export default function ReaderPage() {
         <div className="relative mt-12 w-full max-w-[360px]">
           <div className="text-[9px] uppercase tracking-[3px] text-gold/55">как тебе хочется читать?</div>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => beginReading('book-horizontal')} className={`rounded-2xl border px-3 py-4 text-left transition ${readerMode === 'book-horizontal' ? 'border-gold/55 bg-gold/10 shadow-[0_0_30px_rgba(201,160,99,.12)]' : 'border-white/10 bg-white/[.035]'}`}><ArrowLeftRight size={18} className="text-gold"/><span className="mt-2 block font-serif text-lg">Книга вбок</span><span className="mt-1 block text-[10px] leading-relaxed text-white/40">лист справа налево</span></button>
-            <button type="button" onClick={() => beginReading('book-vertical')} className={`rounded-2xl border px-3 py-4 text-left transition ${readerMode === 'book-vertical' ? 'border-gold/55 bg-gold/10 shadow-[0_0_30px_rgba(201,160,99,.12)]' : 'border-white/10 bg-white/[.035]'}`}><ArrowUpDown size={18} className="text-gold"/><span className="mt-2 block font-serif text-lg">Книга вверх</span><span className="mt-1 block text-[10px] leading-relaxed text-white/40">лист снизу вверх</span></button>
-            <button type="button" onClick={() => beginReading('scroll')} className={`col-span-2 flex items-center gap-3 rounded-2xl border px-3 py-3 text-left transition ${readerMode === 'scroll' ? 'border-gold/55 bg-gold/10 shadow-[0_0_30px_rgba(201,160,99,.12)]' : 'border-white/10 bg-white/[.035]'}`}><ScrollText size={18} className="shrink-0 text-gold"/><span><span className="block font-serif text-lg">Обычной лентой</span><span className="block text-[10px] leading-relaxed text-white/40">спокойно прокручивать вниз</span></span></button>
+            <button type="button" onClick={() => beginReading('book')} className={`rounded-2xl border px-3 py-4 text-left transition ${readerMode === 'book' ? 'border-gold/55 bg-gold/10 shadow-[0_0_30px_rgba(201,160,99,.12)]' : 'border-white/10 bg-white/[.035]'}`}><BookOpen size={18} className="text-gold"/><span className="mt-2 block font-serif text-lg">Как книгу</span><span className="mt-1 block text-[10px] leading-relaxed text-white/40">свайп справа налево</span></button>
+            <button type="button" onClick={() => beginReading('scroll')} className={`rounded-2xl border px-3 py-4 text-left transition ${readerMode === 'scroll' ? 'border-gold/55 bg-gold/10 shadow-[0_0_30px_rgba(201,160,99,.12)]' : 'border-white/10 bg-white/[.035]'}`}><ScrollText size={18} className="text-gold"/><span className="mt-2 block font-serif text-lg">Лентой</span><span className="mt-1 block text-[10px] leading-relaxed text-white/40">листать вниз</span></button>
           </div>
         </div>
       </section>

@@ -326,7 +326,7 @@ html[data-reader-motion='lite'] .reader-shell [class*='backdrop-blur'] {
    page; very long messages are split in code and exceptional media pages can
    still scroll inside their own sheet instead of clipping outside the frame. */
 .reader-book-stage {
-  width: min(100%, 430px);
+  width: min(100%, 480px);
   margin-inline: auto;
   border-inline: 1px solid rgba(255,255,255,.055);
   box-shadow: 0 0 80px rgba(0,0,0,.58);
@@ -356,7 +356,6 @@ html[data-reader-layout='scroll'] {
   transform-style: preserve-3d;
   will-change: transform, opacity;
   touch-action: pan-y;
-  isolation: isolate;
 }
 .story-book-page::before {
   content: '';
@@ -407,136 +406,9 @@ html[data-reader-layout='scroll'] {
 .story-book-skin-2 { --book-page-glow: rgba(205,91,139,.17); background: linear-gradient(145deg,#160d14,#5d233e 58%,#160c14); }
 .story-book-skin-3 { --book-page-glow: rgba(116,173,103,.13); background: linear-gradient(145deg,#11140d,#31492d 58%,#0d110c); }
 .story-book-skin-4 { --book-page-glow: rgba(224,158,79,.15); background: linear-gradient(145deg,#171108,#64441f 58%,#151007); }
-.book-base-page {
-  z-index: 4;
-  border-radius: 2px 7px 9px 2px;
-  transform-style: preserve-3d;
-}
-.book-page-stack {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  border-radius: 2px 8px 10px 2px;
-  background: linear-gradient(145deg,#171116,#2b1b24 60%,#100c0f);
-  box-shadow: 0 16px 44px rgba(0,0,0,.48);
-  pointer-events: none;
-}
-.reader-book-stage[data-book-orientation='horizontal'] .book-page-stack-back { transform: translateX(7px) scale(.988); opacity: .38; }
-.reader-book-stage[data-book-orientation='horizontal'] .book-page-stack-middle { transform: translateX(3px) scale(.995); opacity: .62; }
-.reader-book-stage[data-book-orientation='vertical'] .book-page-stack-back { transform: translateY(7px) scale(.988); opacity: .38; }
-.reader-book-stage[data-book-orientation='vertical'] .book-page-stack-middle { transform: translateY(3px) scale(.995); opacity: .62; }
-.book-paper-grain {
-  z-index: 19;
-  opacity: .13;
-  background:
-    repeating-linear-gradient(7deg,rgba(255,255,255,.08) 0 1px,transparent 1px 7px),
-    radial-gradient(circle at 18% 24%,rgba(255,255,255,.16) 0 1px,transparent 1.5px),
-    radial-gradient(circle at 73% 68%,rgba(0,0,0,.2) 0 1px,transparent 1.5px);
-  background-size: auto,23px 27px,29px 31px;
-  mix-blend-mode: soft-light;
-}
 .book-page-fold {
-  z-index: 20;
-  opacity: .72;
-}
-.reader-book-stage[data-book-orientation='horizontal'] .book-page-fold {
-  inset-block: 0;
-  right: 0;
-  width: 42px;
-  background: linear-gradient(90deg,transparent,rgba(255,255,255,.025) 42%,rgba(0,0,0,.29));
-  box-shadow: inset -1px 0 rgba(255,255,255,.07);
-}
-.reader-book-stage[data-book-orientation='vertical'] .book-page-fold {
-  inset-inline: 0;
-  bottom: 0;
-  height: 42px;
-  background: linear-gradient(180deg,transparent,rgba(255,255,255,.025) 42%,rgba(0,0,0,.29));
-  box-shadow: inset 0 -1px rgba(255,255,255,.07);
-}
-.book-turning-sheet {
-  z-index: 14;
-  transform-style: preserve-3d;
-  will-change: transform,filter,box-shadow;
-  pointer-events: none;
-}
-.reader-book-stage[data-book-orientation='horizontal'] .book-turning-sheet { transform-origin: left center; }
-.reader-book-stage[data-book-orientation='vertical'] .book-turning-sheet { transform-origin: center top; }
-.book-sheet-face {
-  border-radius: 2px 8px 10px 2px;
-  backface-visibility: hidden;
-  transform-style: preserve-3d;
-  background: inherit;
-}
-.book-sheet-front { transform: translateZ(.8px); }
-.reader-book-stage[data-book-orientation='horizontal'] .book-sheet-back { transform: rotateY(180deg) translateZ(.8px); }
-.reader-book-stage[data-book-orientation='vertical'] .book-sheet-back { transform: rotateX(180deg) translateZ(.8px); }
-.book-paper-backside {
-  display: grid;
-  place-items: center;
-  color: rgba(201,160,99,.22);
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: 58px;
-  background:
-    repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 8px),
-    radial-gradient(circle at 52% 42%,rgba(201,160,99,.11),transparent 34%),
-    linear-gradient(145deg,#24171e,#130f12 72%);
-  box-shadow: inset 0 0 70px rgba(0,0,0,.28);
-}
-.book-live-fold {
-  z-index: 25;
-  opacity: 0;
-  filter: blur(.15px);
-}
-.reader-book-stage[data-book-orientation='horizontal'] .book-live-fold {
-  inset-block: 0;
-  right: 0;
-  width: 28%;
-  transform-origin: right center;
-  background: linear-gradient(90deg,transparent 0%,rgba(255,255,255,.13) 56%,rgba(0,0,0,.42) 100%);
-  animation: real-book-fold-horizontal .94s cubic-bezier(.2,.72,.18,1) both;
-}
-.reader-book-stage[data-book-orientation='vertical'] .book-live-fold {
-  inset-inline: 0;
-  bottom: 0;
-  height: 28%;
-  transform-origin: center bottom;
-  background: linear-gradient(180deg,transparent 0%,rgba(255,255,255,.13) 56%,rgba(0,0,0,.42) 100%);
-  animation: real-book-fold-vertical .94s cubic-bezier(.2,.72,.18,1) both;
-}
-.book-turning-sheet[data-turn-direction='backward'] .book-live-fold { animation-direction: reverse; }
-.book-spine {
-  opacity: .72;
-  mix-blend-mode: screen;
-}
-.reader-book-stage[data-book-orientation='horizontal'] .book-spine {
-  inset-block: 0;
-  left: 0;
-  width: 12px;
-  background: linear-gradient(90deg,rgba(0,0,0,.5),rgba(255,255,255,.055),transparent);
-  box-shadow: 6px 0 18px rgba(0,0,0,.22);
-}
-.reader-book-stage[data-book-orientation='vertical'] .book-spine {
-  inset-inline: 0;
-  top: 0;
-  height: 12px;
-  background: linear-gradient(180deg,rgba(0,0,0,.5),rgba(255,255,255,.055),transparent);
-  box-shadow: 0 6px 18px rgba(0,0,0,.22);
-}
-.pixel-book-control {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-@keyframes real-book-fold-horizontal {
-  0%,100% { opacity: .12; transform: scaleX(.3); }
-  18% { opacity: .52; transform: scaleX(.58); }
-  48% { opacity: .96; transform: scaleX(1.16); }
-  72% { opacity: .58; transform: scaleX(.72); }
-}
-@keyframes real-book-fold-vertical {
-  0%,100% { opacity: .12; transform: scaleY(.3); }
-  18% { opacity: .52; transform: scaleY(.58); }
-  48% { opacity: .96; transform: scaleY(1.16); }
-  72% { opacity: .58; transform: scaleY(.72); }
+  background: linear-gradient(90deg,transparent,rgba(255,255,255,.018) 42%,rgba(0,0,0,.26));
+  box-shadow: inset -1px 0 rgba(255,255,255,.06);
 }
 @keyframes pixel-page-prompt {
   0%, 42% { transform: translateX(0); opacity: .72; }
@@ -555,7 +427,6 @@ html[data-reader-layout='scroll'] {
 @media (prefers-reduced-motion: reduce) {
   .pixel-page-arrow > span { animation: none; }
   .story-book-page { will-change: auto; }
-  .book-live-fold { animation: none !important; }
 }
 
 .admin-shell input,

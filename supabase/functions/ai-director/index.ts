@@ -48,12 +48,12 @@ Deno.serve(async (request) => {
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: 'Ты бережный редактор личной истории. Отвечай только валидным JSON-массивом без markdown.' },
+          { role: 'system', content: 'Ты бережный романтический режиссёр личной истории. Давай разные, искренние варианты без выдуманных событий и отвечай только валидным JSON-массивом без markdown.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.35,
         top_p: 0.85,
-        max_tokens: 2600,
+        max_tokens: 4200,
       }),
     });
 

@@ -1,0 +1,25 @@
+ОБНОВЛЕНИЕ 0027 — LIVE READER STUDIO
+
+Архив кумулятивный: в него уже входят исправления 0026 (чистая сборка
+Netlify, непрерывная лента, глобальный поиск, массовое редактирование и
+расширенный GIF-поиск).
+
+1. Загрузи архив в корень репозитория через Codespaces.
+2. Открой Terminal в корне aiailock.
+3. Выполни одну команду:
+
+unzip -o aiailock-0027-live-reader-studio.zip && bash aiailock-0027-patch/install_0027.sh
+
+Установщик сам:
+- скопирует все файлы 0026 + 0027;
+- удалит старый книжный режим;
+- проверит build, lint и все тесты;
+- обновит reader-access, public-timeline и get-media-url в Supabase;
+- создаст commit и отправит его в main;
+- после push Netlify запустит deploy.
+
+Если Supabase CLI попросит вход или project-ref, выполни показанные им две
+команды и повторно запусти установщик. Новая SQL-миграция не нужна.
+
+Полный список 20 изменений:
+UPDATE_0027_LIVE_READER_STUDIO_RU.md

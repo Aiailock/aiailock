@@ -1,0 +1,17 @@
+ОБНОВЛЕНИЕ 0026 — AIAILOCK
+
+1. Загрузи архив в корень репозитория через Codespaces.
+2. Открой Terminal.
+3. Выполни одну команду:
+
+unzip -o aiailock-0026-stable-feed-admin-gif.zip && bash aiailock-0026-patch/install_0026.sh
+
+Установщик сам заменит нужные файлы, удалит книжный режим, проверит сборку,
+создаст commit и отправит его в main. Netlify после этого запустит deploy.
+
+Новая SQL-миграция и supabase db push не нужны.
+
+Чтобы подключить полную библиотеку GIPHY, добавь в Netlify:
+VITE_GIPHY_API_KEY=твой_бесплатный_ключ_GIPHY
+
+Без ключа остаются Wikimedia Commons и встроенная резервная подборка.

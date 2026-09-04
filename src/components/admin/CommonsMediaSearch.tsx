@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, Image as ImageIcon, Loader2, Search, Video } from 'lucide-react';
+import { curatedGifMatches, gifSearchTerms } from '@/lib/gifSearch';
 
 export type CommonsMediaKind = 'image' | 'gif' | 'video';
 
@@ -10,6 +11,7 @@ export interface CommonsAsset {
   previewUrl: string;
   sourceUrl: string;
   mime: string;
+  provider?: string;
 }
 
 interface CommonsQueryPage {
@@ -30,31 +32,14 @@ function fits(kind: CommonsMediaKind, mime: string) {
 }
 
 const GIF_PRESETS = [
-  ['Объятия', 'cute warm hug love'],
-  ['Сердечки', 'cute love hearts'],
-  ['Доброй ночи', 'cute good night stars love'],
-  ['Скучаю', 'cute miss you hug'],
-  ['Смешное', 'cute funny love reaction'],
-  ['Поддержка', 'cute comfort hug heart'],
+  ['Объятия', 'объятия'],
+  ['Сердечки', 'сердечки'],
+  ['Доброй ночи', 'доброй ночи'],
+  ['Скучаю', 'скучаю'],
+  ['Котики', 'милый котик'],
+  ['Смешное', 'смешной котик'],
+  ['Поддержка', 'поддержка'],
 ] as const;
-
-function englishGifQuery(query: string) {
-  const source = query.toLocaleLowerCase('ru');
-  const terms: string[] = [];
-  const add = (pattern: RegExp, value: string) => { if (pattern.test(source)) terms.push(value); };
-  add(/люб|роман|влюб|серд|heart/, 'cute romantic love hearts');
-  add(/обним|hug/, 'warm hug');
-  add(/поцел|kiss/, 'cute kiss');
-  add(/ноч|сон|спи|night/, 'good night stars');
-  add(/скуч|miss/, 'miss you');
-  add(/смеш|прикол|хаха|funny/, 'funny reaction');
-  add(/груст|поддерж|боле|comfort/, 'comfort hug');
-  add(/кот|кош|cat/, 'cute cat love');
-  add(/цвет|flower/, 'flowers love');
-  add(/подар|сюрпр|gift/, 'gift surprise love');
-  add(/танц|dance/, 'cute dance love');
-  return terms.length ? Array.from(new Set(terms)).join(' ') : `${query} cute animated`;
-}
 
 async function searchCommonsPage(query: string, kind: CommonsMediaKind, strictMime = true): Promise<CommonsAsset[]> {
   const searchQuery = kind === 'gif' && strictMime ? `${query} filemime:image/gif` : query;
@@ -73,7 +58,10 @@ async function searchCommonsPage(query: string, kind: CommonsMediaKind, strictMi
     uselang: 'ru',
     origin: '*',
   });
-  const response = await fetch(`https://commons.wikimedia.org/w/api.php?${params.toString()}`);
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 9000);
+  const response = await fetch(`https://commons.wikimedia.org/w/api.php?${params.toString()}`, { signal: controller.signal })
+    .finally(() => window.clearTimeout(timer));
   if (!response.ok) throw new Error('Wikimedia Commons сейчас не отвечает.');
   const payload = await response.json() as { query?: { pages?: CommonsQueryPage[] | Record<string, CommonsQueryPage> } };
   const pages = Array.isArray(payload.query?.pages) ? payload.query?.pages : Object.values(payload.query?.pages ?? {});
@@ -87,9 +75,10 @@ async function searchCommonsPage(query: string, kind: CommonsMediaKind, strictMi
         id: String(page.pageid ?? url),
         title: (page.title ?? 'Wikimedia Commons').replace(/^File:/i, ''),
         url,
-        previewUrl: info?.thumburl || url,
+        previewUrl: kind === 'gif' ? url : info?.thumburl || url,
         sourceUrl: info?.descriptionurl || `https://commons.wikimedia.org/wiki/${encodeURIComponent(page.title ?? '')}`,
         mime,
+        provider: 'Wikimedia Commons',
       } satisfies CommonsAsset];
     })
     .slice(0, 18);
@@ -97,19 +86,14 @@ async function searchCommonsPage(query: string, kind: CommonsMediaKind, strictMi
 
 async function searchCommons(query: string, kind: CommonsMediaKind): Promise<CommonsAsset[]> {
   if (kind !== 'gif') return searchCommonsPage(query, kind);
-
-  const translated = englishGifQuery(query);
-  const batches = await Promise.all([
-    searchCommonsPage(query, kind),
-    translated === query ? Promise.resolve([]) : searchCommonsPage(translated, kind),
-  ]);
-  let merged = batches.flat();
-
-  // A few Commons mirrors/index states do not understand filemime. The last
-  // attempt searches the literal word GIF and still verifies MIME client-side.
-  if (merged.length === 0) merged = await searchCommonsPage(`${translated} GIF`, kind, false);
-
-  return Array.from(new Map(merged.map((asset) => [asset.url, asset])).values()).slice(0, 18);
+  const curated = curatedGifMatches(query, 8).map((asset) => ({
+    ...asset,
+    previewUrl: asset.url,
+    mime: 'image/gif',
+  }));
+  const attempts = await Promise.allSettled(gifSearchTerms(query).map((term) => searchCommonsPage(term, kind)));
+  const remote = attempts.flatMap((attempt) => attempt.status === 'fulfilled' ? attempt.value : []);
+  return Array.from(new Map([...curated, ...remote].map((asset) => [asset.url.split('?')[0], asset])).values()).slice(0, 24);
 }
 
 export default function CommonsMediaSearch({
@@ -141,7 +125,13 @@ export default function CommonsMediaSearch({
     if (nextQuery !== query) setQuery(nextQuery);
     const currentRequest = ++requestId.current;
     setBusy(true);
-    setMessage('');
+    if (kind === 'gif') {
+      const instant = curatedGifMatches(normalized, 8).map((asset) => ({ ...asset, previewUrl: asset.url, mime: 'image/gif' }));
+      setResults(instant);
+      setMessage(`Готовая коллекция: ${instant.length}. Ищу дополнительные варианты…`);
+    } else {
+      setMessage('');
+    }
     try {
       const data = await searchCommons(normalized, kind);
       if (currentRequest !== requestId.current) return;
@@ -151,11 +141,20 @@ export default function CommonsMediaSearch({
         : `Нашлось: ${data.length}. Нажми на вариант, чтобы выбрать его.`);
     } catch (error) {
       if (currentRequest !== requestId.current) return;
-      setMessage(error instanceof Error ? error.message : 'Поиск не удался.');
+      setMessage(kind === 'gif'
+        ? 'Интернет-поиск сейчас недоступен, но готовая коллекция выше продолжает работать.'
+        : error instanceof Error ? error.message : 'Поиск не удался.');
     } finally {
       if (currentRequest === requestId.current) setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (kind !== 'gif' || results.length > 0) return;
+    const starter = curatedGifMatches(initialQuery || 'любовь', 8).map((asset) => ({ ...asset, previewUrl: asset.url, mime: 'image/gif' }));
+    setResults(starter);
+    setMessage('Готовая коллекция уже здесь. Можно выбрать GIF сразу или уточнить поиск.');
+  }, [initialQuery, kind, results.length]);
 
   return <div className="rounded-2xl border border-burgundy/10 bg-[#FBF8F5] p-3">
     <div className="flex items-center gap-2 text-xs font-medium text-burgundy">{kind === 'video' ? <Video size={14}/> : <ImageIcon size={14}/>} {kind === 'gif' ? 'Библиотека милых GIF' : 'Бесплатный поиск Wikimedia Commons'}</div>
@@ -174,6 +173,6 @@ export default function CommonsMediaSearch({
       </button>)}
     </div>}
     {value && <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-white p-2 text-[10px]"><span className="min-w-0 truncate">Выбрано: {value.title}</span><a href={value.sourceUrl} target="_blank" rel="noreferrer" className="shrink-0 text-burgundy"><ExternalLink size={12}/></a></div>}
-    <p className="mt-2 text-[9px] leading-relaxed opacity-40">Файлы берутся из Wikimedia Commons. Русские запросы для GIF автоматически переводятся в эмоциональные теги. Перед публикацией можно открыть источник и проверить авторство/лицензию.</p>
+    <p className="mt-2 text-[9px] leading-relaxed opacity-40">GIF-библиотека работает без ключей: сначала показывает готовую коллекцию GIPHY/Wikimedia, затем добавляет результаты поиска Commons. Перед публикацией можно открыть источник и проверить правила использования.</p>
   </div>;
 }

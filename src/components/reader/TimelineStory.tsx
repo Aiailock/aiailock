@@ -1,6 +1,8 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowDown,
+  ArrowLeftRight,
+  ArrowUpDown,
   Bookmark,
   BookOpen,
   ChevronUp,
@@ -10,6 +12,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  ScrollText,
   Sparkles,
   Type,
   X,
@@ -23,8 +26,9 @@ import {
   preloadTimelineMedia,
   recordReaderAnalytics,
 } from '@/lib/readerApi';
-import { useReaderSettings } from '@/lib/readerSettingsContext';
+import { bookOrientation, isBookReaderMode, useReaderSettings, type ReaderModeId } from '@/lib/readerSettingsContext';
 import StoryElement from './StoryElement';
+import BookTimeline from './BookTimeline';
 
 interface ReadingPlace {
   elementId: string;
@@ -73,6 +77,13 @@ function savedReadingPlace(): ReadingPlace | null {
 
 function scrollToElement(id: string, behavior: ScrollBehavior = 'smooth') {
   document.querySelector<HTMLElement>(`[data-reader-element="${id}"]`)?.scrollIntoView({ behavior, block: 'start' });
+}
+
+function readerVisitorId() {
+  const key = 'for-you-reader-id';
+  let visitorId = localStorage.getItem(key);
+  if (!visitorId) { visitorId = crypto.randomUUID(); localStorage.setItem(key, visitorId); }
+  return visitorId;
 }
 
 function nearestVisualMedia(rows: PublicTimelineRow[], count = 2) {
@@ -131,6 +142,8 @@ function JourneyTools({
   currentChapter,
   readingPlace,
   total,
+  readingMode,
+  onReadingModeChange,
 }: {
   rows: PublicTimelineRow[];
   chapters: PublicChapterSummary[];
@@ -139,6 +152,8 @@ function JourneyTools({
   currentChapter: string;
   readingPlace: ReadingPlace | null;
   total: number | null;
+  readingMode: ReaderModeId;
+  onReadingModeChange: (mode: ReaderModeId) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [autoScroll, setAutoScroll] = useState(false);
@@ -148,6 +163,10 @@ function JourneyTools({
   });
   const [bookmarkSaved, setBookmarkSaved] = useState(false);
   const minutesLeft = Math.max(1, Math.ceil((((total ?? rows.length) * (100 - progress)) / 100) * 0.18));
+
+  useEffect(() => {
+    if (isBookReaderMode(readingMode)) setAutoScroll(false);
+  }, [readingMode]);
 
   useEffect(() => {
     document.documentElement.dataset.readerText = textSize;
@@ -199,12 +218,13 @@ function JourneyTools({
             <motion.div initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12 }} className="mb-2 max-h-[68vh] overflow-y-auto rounded-[28px] border border-white/10 bg-[#131116]/95 p-4 text-[#F4EFE6] shadow-2xl backdrop-blur-2xl">
               <div className="flex items-center justify-between"><div><div className="text-[9px] uppercase tracking-[2.5px] text-gold/55">карта путешествия</div><div className="mt-1 font-serif text-xl">{currentChapter || 'Вся история'}</div></div><button type="button" aria-label="Закрыть" onClick={() => setOpen(false)} className="rounded-full bg-white/[.06] p-2 text-white/55"><X size={16}/></button></div>
               <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                <button type="button" onClick={() => setAutoScroll((value) => !value)} className="rounded-2xl bg-white/[.055] p-3 text-left"><span className="flex items-center gap-2 text-gold">{autoScroll ? <Pause size={15}/> : <Play size={15}/>} Авточтение</span><span className="mt-1 block text-[10px] text-white/35">{autoScroll ? 'остановить движение' : 'медленно листать'}</span></button>
+                <button type="button" disabled={isBookReaderMode(readingMode)} onClick={() => setAutoScroll((value) => !value)} className="rounded-2xl bg-white/[.055] p-3 text-left disabled:opacity-35"><span className="flex items-center gap-2 text-gold">{autoScroll ? <Pause size={15}/> : <Play size={15}/>} Авточтение</span><span className="mt-1 block text-[10px] text-white/35">{isBookReaderMode(readingMode) ? 'доступно в режиме ленты' : autoScroll ? 'остановить движение' : 'медленно листать'}</span></button>
                 <button type="button" onClick={saveBookmark} disabled={!readingPlace} className="rounded-2xl bg-white/[.055] p-3 text-left disabled:opacity-35"><span className="flex items-center gap-2 text-gold"><Bookmark size={15}/> Закладка</span><span className="mt-1 block text-[10px] text-white/35">{bookmarkSaved ? 'место сохранено' : 'сохранить это место'}</span></button>
                 <button type="button" onClick={nextChapter} className="rounded-2xl bg-white/[.055] p-3 text-left"><span className="flex items-center gap-2 text-gold"><ArrowDown size={15}/> Дальше</span><span className="mt-1 block text-[10px] text-white/35">к следующей главе</span></button>
                 <button type="button" onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); setOpen(false); }} className="rounded-2xl bg-white/[.055] p-3 text-left"><span className="flex items-center gap-2 text-gold"><ChevronUp size={15}/> В начало</span><span className="mt-1 block text-[10px] text-white/35">вернуться к обложке</span></button>
               </div>
               <div className="mt-3 rounded-2xl bg-white/[.04] p-3"><div className="flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-white/60"><Type size={14}/> Размер текста</span><div className="flex rounded-full bg-black/25 p-1">{[['small','А'],['normal','Аа'],['large','АА']].map(([id,label]) => <button type="button" key={id} onClick={() => setTextSize(id)} className={`rounded-full px-2.5 py-1 text-[10px] ${textSize === id ? 'bg-gold text-black' : 'text-white/45'}`}>{label}</button>)}</div></div></div>
+              <div className="mt-3 rounded-2xl bg-white/[.04] p-3"><div className="text-xs text-white/60">Режим чтения</div><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => { onReadingModeChange('book-horizontal'); setOpen(false); }} className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs ${readingMode === 'book-horizontal' ? 'bg-gold text-black' : 'bg-black/20 text-white/55'}`}><ArrowLeftRight size={14}/>Вбок</button><button type="button" onClick={() => { onReadingModeChange('book-vertical'); setOpen(false); }} className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs ${readingMode === 'book-vertical' ? 'bg-gold text-black' : 'bg-black/20 text-white/55'}`}><ArrowUpDown size={14}/>Вверх</button><button type="button" onClick={() => { onReadingModeChange('scroll'); setOpen(false); }} className={`col-span-2 flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs ${readingMode === 'scroll' ? 'bg-gold text-black' : 'bg-black/20 text-white/55'}`}><ScrollText size={14}/>Обычная лента</button></div></div>
               {bookmark?.elementId && <button type="button" onClick={() => { void onJump(bookmark.elementId, bookmark.position); setOpen(false); }} className="mt-3 flex w-full items-center justify-between rounded-2xl border border-gold/15 px-4 py-3 text-left text-xs text-gold/75"><span><Bookmark size={13} className="mr-2 inline"/>Открыть сохранённую закладку</span><span>{bookmark.progress}%</span></button>}
               {chapters.length > 0 && <div className="mt-4"><div className="mb-2 text-[9px] uppercase tracking-[2px] text-white/30">все главы · {chapters.length}</div><div className="space-y-1">{chapters.map((chapter, index) => <button type="button" key={chapter.elementId} onClick={() => { void onJump(chapter.elementId, chapter.storyPosition); setOpen(false); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm hover:bg-white/[.06]"><span className="flex h-6 w-6 items-center justify-center rounded-full border border-gold/20 text-[9px] text-gold/65">{index + 1}</span><span className="min-w-0 flex-1 truncate font-serif text-base">{chapter.title}</span></button>)}</div></div>}
             </motion.div>
@@ -221,7 +241,8 @@ function JourneyTools({
   );
 }
 
-export default function TimelineStory({ token, track = true }: { token: string; track?: boolean }) {
+export default function TimelineStory({ token, track = true, readingMode = 'scroll', onReadingModeChange }: { token: string; track?: boolean; readingMode?: ReaderModeId; onReadingModeChange: (mode: ReaderModeId) => void }) {
+  const reducedMotion = useReducedMotion();
   const [rows, setRows] = useState<PublicTimelineRow[]>([]);
   const [allChapters, setAllChapters] = useState<PublicChapterSummary[]>([]);
   const [booting, setBooting] = useState(true);
@@ -237,6 +258,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState('');
+  const [bookTargetElementId, setBookTargetElementId] = useState<string | null>(null);
   const runId = useRef(0);
   const cursorRef = useRef<PublicTimelineCursor | null>(null);
   const hasMoreRef = useRef(false);
@@ -245,6 +267,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
   const reportTimer = useRef(0);
   const visitId = useRef(crypto.randomUUID());
   const lastReported = useRef({ id: '', progress: 0 });
+  const previousReadingMode = useRef(readingMode);
 
   const setPaging = useCallback((cursor: PublicTimelineCursor | null, nextHasMore: boolean) => {
     cursorRef.current = cursor;
@@ -329,7 +352,8 @@ export default function TimelineStory({ token, track = true }: { token: string; 
     if (!readingPlace || resumeLoading) return;
     if (rows.some((row) => row.element_id === readingPlace.elementId)) {
       setShowResumeCard(false);
-      scrollToElement(readingPlace.elementId);
+      if (isBookReaderMode(readingMode)) setBookTargetElementId(readingPlace.elementId);
+      else scrollToElement(readingPlace.elementId);
       return;
     }
     setResumeLoading(true);
@@ -346,17 +370,19 @@ export default function TimelineStory({ token, track = true }: { token: string; 
       setReadProgress((current) => Math.max(current, readingPlace.progress));
       setShowResumeCard(false);
       void preloadTimelineMedia(nearestVisualMedia(ordered), token);
-      window.requestAnimationFrame(() => window.requestAnimationFrame(() => scrollToElement(readingPlace.elementId, 'auto')));
+      if (isBookReaderMode(readingMode)) setBookTargetElementId(readingPlace.elementId);
+      else window.requestAnimationFrame(() => window.requestAnimationFrame(() => scrollToElement(readingPlace.elementId, 'auto')));
     } catch (error) {
       setMoreError(error instanceof Error ? error.message : 'Сохранённое место пока не открылось.');
     } finally {
       setResumeLoading(false);
     }
-  }, [readingPlace, resumeLoading, rows, setPaging, token]);
+  }, [readingMode, readingPlace, resumeLoading, rows, setPaging, token]);
 
   const jumpToElement = useCallback(async (elementId: string, position?: number) => {
     if (rows.some((row) => row.element_id === elementId)) {
-      scrollToElement(elementId);
+      if (isBookReaderMode(readingMode)) setBookTargetElementId(elementId);
+      else scrollToElement(elementId);
       return;
     }
     if (loadingMoreRef.current) return;
@@ -372,14 +398,15 @@ export default function TimelineStory({ token, track = true }: { token: string; 
       if (result.total !== null) setTotal(result.total);
       setPaging(result.nextCursor, result.hasMore);
       void preloadTimelineMedia(nearestVisualMedia(ordered), token);
-      window.requestAnimationFrame(() => window.requestAnimationFrame(() => scrollToElement(elementId, 'auto')));
+      if (isBookReaderMode(readingMode)) setBookTargetElementId(elementId);
+      else window.requestAnimationFrame(() => window.requestAnimationFrame(() => scrollToElement(elementId, 'auto')));
     } catch (error) {
       setMoreError(error instanceof Error ? error.message : 'Не удалось открыть выбранную главу.');
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [rows, setPaging, token]);
+  }, [readingMode, rows, setPaging, token]);
 
   const renderedRows = useMemo(() => {
     const result: Array<{ row: PublicTimelineRow; galleryRows?: PublicTimelineRow[]; position: number }> = [];
@@ -420,58 +447,71 @@ export default function TimelineStory({ token, track = true }: { token: string; 
     return result;
   }, [positionOffset, readingPlace?.chapter, renderedRows]);
 
+  const commitReadingPlace = useCallback((elementId: string) => {
+    if (!track) return;
+    const meta = elementMeta.get(elementId);
+    if (!meta) return;
+    const denominator = total ?? Math.max(meta.position, positionOffset + rows.length + (hasMore ? 1 : 0));
+    const progress = Math.max(1, Math.min(100, Math.round((meta.position / Math.max(1, denominator)) * 100)));
+    setReadProgress((current) => Math.max(current, progress));
+    if (meta.chapter) setCurrentChapter(meta.chapter);
+    const place = { elementId, position: meta.position, progress, chapter: meta.chapter };
+    localStorage.setItem(READING_PLACE_KEY, JSON.stringify(place));
+    setReadingPlace(place);
+    if (lastReported.current.id === elementId && progress <= lastReported.current.progress) return;
+    lastReported.current = { id: elementId, progress };
+    window.clearTimeout(reportTimer.current);
+    reportTimer.current = window.setTimeout(() => {
+      void recordReaderAnalytics({
+        action: progress >= 99 ? 'complete' : 'progress',
+        visitorId: readerVisitorId(),
+        visitId: visitId.current,
+        elementId,
+        position: meta.position,
+        progress,
+        chapter: meta.chapter,
+      }, token);
+    }, 900);
+  }, [elementMeta, hasMore, positionOffset, rows.length, token, total, track]);
+
+  useEffect(() => {
+    if (previousReadingMode.current === readingMode) return;
+    previousReadingMode.current = readingMode;
+    if (booting || showResumeCard || !readingPlace) return;
+    if (isBookReaderMode(readingMode)) setBookTargetElementId(readingPlace.elementId);
+    else window.requestAnimationFrame(() => scrollToElement(readingPlace.elementId, 'auto'));
+  }, [booting, readingMode, readingPlace, showResumeCard]);
+
+  const handleBookActive = useCallback((item: { row: PublicTimelineRow }) => {
+    commitReadingPlace(item.row.element_id);
+  }, [commitReadingPlace]);
+
+  const clearBookTarget = useCallback(() => setBookTargetElementId(null), []);
+
   useEffect(() => {
     if (!track || booting) return;
-    const key = 'for-you-reader-id';
-    let visitorId = localStorage.getItem(key);
-    if (!visitorId) { visitorId = crypto.randomUUID(); localStorage.setItem(key, visitorId); }
+    const visitorId = readerVisitorId();
     void recordReaderAnalytics({ action: 'open', visitorId, visitId: visitId.current }, token).then((result) => {
       if (result.total !== null) setTotal(result.total);
     });
   }, [token, track, booting]);
 
   useEffect(() => {
-    if (!track || booting || renderedRows.length === 0) return;
-    const visitorId = localStorage.getItem('for-you-reader-id');
-    if (!visitorId) return;
+    if (!track || booting || readingMode !== 'scroll' || renderedRows.length === 0) return;
     const elements = Array.from(document.querySelectorAll<HTMLElement>('[data-reader-element]'));
     const observer = new IntersectionObserver((entries) => {
       const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
       const target = visible[0]?.target as HTMLElement | undefined;
       if (!target) return;
       const elementId = target.dataset.readerElement ?? '';
-      const meta = elementMeta.get(elementId);
-      if (!elementId || !meta) return;
-      const denominator = total ?? Math.max(meta.position, positionOffset + rows.length + (hasMore ? 1 : 0));
-      const progress = Math.max(1, Math.min(100, Math.round((meta.position / Math.max(1, denominator)) * 100)));
-      setReadProgress((current) => Math.max(current, progress));
-      if (meta.chapter) setCurrentChapter(meta.chapter);
-      if (meta.position > 0) {
-        const place = { elementId, position: meta.position, progress, chapter: meta.chapter };
-        localStorage.setItem(READING_PLACE_KEY, JSON.stringify(place));
-        setReadingPlace(place);
-      }
-      if (lastReported.current.id === elementId && progress <= lastReported.current.progress) return;
-      lastReported.current = { id: elementId, progress };
-      window.clearTimeout(reportTimer.current);
-      reportTimer.current = window.setTimeout(() => {
-        void recordReaderAnalytics({
-          action: progress >= 99 ? 'complete' : 'progress',
-          visitorId,
-          visitId: visitId.current,
-          elementId,
-          position: meta.position,
-          progress,
-          chapter: meta.chapter,
-        }, token);
-      }, 900);
+      if (elementId) commitReadingPlace(elementId);
     }, { threshold: [0.35, 0.65], rootMargin: '-12% 0px -18%' });
     elements.forEach((element) => observer.observe(element));
     return () => {
       observer.disconnect();
       window.clearTimeout(reportTimer.current);
     };
-  }, [booting, elementMeta, hasMore, positionOffset, renderedRows.length, rows.length, token, total, track]);
+  }, [booting, commitReadingPlace, readingMode, renderedRows.length, track]);
 
   return <div className="w-full">
     <AnimatePresence>{booting && <JourneyLoader state={loader} onRetry={() => setRetryKey((value) => value + 1)} />}</AnimatePresence>
@@ -480,13 +520,27 @@ export default function TimelineStory({ token, track = true }: { token: string; 
       <div className="pointer-events-none fixed inset-x-0 top-0 z-40 h-px bg-white/5"><div className="h-full bg-gold/80 transition-[width] duration-700" style={{ width: `${readProgress}%` }} /></div>
       {currentChapter && <div className="pointer-events-none fixed inset-x-0 top-3 z-30 text-center"><span className="inline-block max-w-[78vw] truncate rounded-full bg-black/35 px-4 py-1.5 text-[9px] uppercase tracking-[2px] text-gold/65 backdrop-blur-md">{currentChapter}</span></div>}
       {showResumeCard && readingPlace && <div className="flex min-h-[24vh] items-center justify-center bg-[#0B0B0D] px-6"><button type="button" disabled={resumeLoading} onClick={() => void resumeFromSavedPlace()} className="group border-y border-gold/25 px-7 py-6 text-center text-[#F4EFE6] transition hover:border-gold/50 disabled:opacity-55"><BookOpen className="mx-auto text-gold/70" size={20}/><span className="mt-3 block font-serif text-xl">{resumeLoading ? 'Открываю это место…' : 'Продолжить с места'}</span><span className="mt-1 block text-[10px] uppercase tracking-[2px] text-white/35">прочитано {readingPlace.progress}%{readingPlace.chapter ? ` · ${readingPlace.chapter}` : ''}</span></button></div>}
-      {chunks.map((chunk, chunkIndex) => <div className="story-page-chunk" key={chunk[0]?.row.element_id ?? chunkIndex}>{chunk.map(({ row, galleryRows, position }) => <div key={row.screenshot_collection_id ?? row.element_id} data-reader-element={row.element_id} data-reader-position={position}><StoryElement row={row} galleryRows={galleryRows} token={token} /></div>)}</div>)}
-      <div ref={sentinelRef} className="flex min-h-24 items-center justify-center bg-[#0B0B0D] px-6 text-center text-[#F4EFE6]/45">
-        {loadingMore && <div><div className="story-loader-ring mx-auto h-7 w-7"/><div className="mt-3 text-[10px] uppercase tracking-[2px]">готовлю следующие страницы</div></div>}
-        {!loadingMore && moreError && <button type="button" onClick={() => void loadMore()} className="rounded-full border border-gold/25 px-5 py-3 text-xs text-gold">Загрузить дальше ещё раз</button>}
-      </div>
-      {!hasMore && <StoryEnding />}
-      <JourneyTools rows={rows} chapters={allChapters} onJump={jumpToElement} total={total} progress={readProgress} currentChapter={currentChapter} readingPlace={readingPlace} />
+      {isBookReaderMode(readingMode) ? <BookTimeline
+        items={renderedRows}
+        token={token}
+        orientation={bookOrientation(readingMode)}
+        hasMore={hasMore}
+        loadingMore={loadingMore}
+        moreError={moreError}
+        targetElementId={bookTargetElementId}
+        ending={<StoryEnding />}
+        onNeedMore={loadMore}
+        onActiveItem={handleBookActive}
+        onTargetHandled={clearBookTarget}
+      /> : <div className="reader-scroll-pages">
+        {chunks.map((chunk, chunkIndex) => <div className="story-page-chunk" key={chunk[0]?.row.element_id ?? chunkIndex}>{chunk.map(({ row, galleryRows, position }) => <motion.div key={row.screenshot_collection_id ?? row.element_id} data-reader-element={row.element_id} data-reader-position={position} className="story-scroll-page" initial={reducedMotion ? false : { opacity: .35, y: 34, rotateX: 4 }} whileInView={{ opacity: 1, y: 0, rotateX: 0 }} viewport={{ once: true, amount: .16 }} transition={{ duration: .7, ease: [0.22, 1, 0.36, 1] }}><StoryElement row={row} galleryRows={galleryRows} token={token} /></motion.div>)}</div>)}
+        <div ref={sentinelRef} className="flex min-h-24 items-center justify-center bg-[#0B0B0D] px-6 text-center text-[#F4EFE6]/45">
+          {loadingMore && <div><div className="story-loader-ring mx-auto h-7 w-7"/><div className="mt-3 text-[10px] uppercase tracking-[2px]">готовлю следующие страницы</div></div>}
+          {!loadingMore && moreError && <button type="button" onClick={() => void loadMore()} className="rounded-full border border-gold/25 px-5 py-3 text-xs text-gold">Загрузить дальше ещё раз</button>}
+        </div>
+        {!hasMore && <StoryEnding />}
+      </div>}
+      <JourneyTools rows={rows} chapters={allChapters} onJump={jumpToElement} total={total} progress={readProgress} currentChapter={currentChapter} readingPlace={readingPlace} readingMode={readingMode} onReadingModeChange={onReadingModeChange} />
     </>}
   </div>;
 }

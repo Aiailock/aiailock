@@ -192,7 +192,7 @@ function AnimatedWords({ text, className, reduced }: { text: string; className: 
   })}</p>;
 }
 
-function StoryElement({ row, token, galleryRows }: { row: PublicTimelineRow; token: string; galleryRows?: PublicTimelineRow[] }) {
+function StoryElement({ row, token, galleryRows, hideReaction = false }: { row: PublicTimelineRow; token: string; galleryRows?: PublicTimelineRow[]; hideReaction?: boolean }) {
   const reducedMotion = useReducedMotion();
   const settings = useReaderSettings();
   const [linkOpen, setLinkOpen] = useState(false);
@@ -232,7 +232,7 @@ function StoryElement({ row, token, galleryRows }: { row: PublicTimelineRow; tok
               <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 border-t border-black/10 px-4 py-3 text-xs text-burgundy">Если сайт не показался — открыть отдельно <ExternalLink size={13} /></a>
             </div>}
           </div>
-          <ReaderReaction elementId={row.element_id} token={token} dark />
+          {!hideReaction && <ReaderReaction elementId={row.element_id} token={token} dark />}
         </div>
       </section>
     </MotionWrap>;
@@ -241,12 +241,12 @@ function StoryElement({ row, token, galleryRows }: { row: PublicTimelineRow; tok
   if (row.type === 'quote') {
     const quote = typeof row.metadata?.quote === 'string' ? row.metadata.quote : '';
     const author = typeof row.metadata?.author === 'string' ? row.metadata.author : '';
-    return <MotionWrap reduced={liteMotion}><section className="relative mx-auto flex min-h-[58vh] max-w-page flex-col items-center justify-center overflow-hidden bg-[#0B0B0D] px-7 py-24 text-center text-[#F4EFE6]"><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative max-w-[390px]"><div aria-hidden className="font-serif text-7xl leading-none text-gold/35">“</div><blockquote className="-mt-4 whitespace-pre-wrap font-serif text-[29px] italic leading-[1.55] sm:text-[34px]">{quote || 'Наша фраза'}</blockquote>{author && <footer className="mt-8 text-[11px] uppercase tracking-[3px] text-gold/70">{author}</footer>}<div className="mx-auto mt-9 h-px w-14 bg-gold/35"/></div><ReaderReaction elementId={row.element_id} token={token} dark /></section></MotionWrap>;
+    return <MotionWrap reduced={liteMotion}><section className="relative mx-auto flex min-h-[58vh] max-w-page flex-col items-center justify-center overflow-hidden bg-[#0B0B0D] px-7 py-24 text-center text-[#F4EFE6]"><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative max-w-[390px]"><div aria-hidden className="font-serif text-7xl leading-none text-gold/35">“</div><blockquote className="-mt-4 whitespace-pre-wrap font-serif text-[29px] italic leading-[1.55] sm:text-[34px]">{quote || 'Наша фраза'}</blockquote>{author && <footer className="mt-8 text-[11px] uppercase tracking-[3px] text-gold/70">{author}</footer>}<div className="mx-auto mt-9 h-px w-14 bg-gold/35"/></div>{!hideReaction && <ReaderReaction elementId={row.element_id} token={token} dark />}</section></MotionWrap>;
   }
 
   if (row.type === 'pause') {
     const pauseText = typeof row.metadata?.text === 'string' ? row.metadata.text : '';
-    return <MotionWrap reduced={liteMotion}><section className="relative mx-auto flex min-h-[52vh] max-w-page flex-col items-center justify-center overflow-hidden bg-[#0D0C0E] px-7 py-24 text-center text-[#F4EFE6]"><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative max-w-xs"><div className="mx-auto h-px w-16 bg-gold/35"/>{pauseText && <p className="mt-8 whitespace-pre-wrap font-script text-2xl leading-relaxed text-[#F4EFE6]/72">{pauseText}</p>}<div aria-hidden className="mt-8 text-lg text-gold/55">♡</div></div><ReaderReaction elementId={row.element_id} token={token} dark /></section></MotionWrap>;
+    return <MotionWrap reduced={liteMotion}><section className="relative mx-auto flex min-h-[52vh] max-w-page flex-col items-center justify-center overflow-hidden bg-[#0D0C0E] px-7 py-24 text-center text-[#F4EFE6]"><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative max-w-xs"><div className="mx-auto h-px w-16 bg-gold/35"/>{pauseText && <p className="mt-8 whitespace-pre-wrap font-script text-2xl leading-relaxed text-[#F4EFE6]/72">{pauseText}</p>}<div aria-hidden className="mt-8 text-lg text-gold/55">♡</div></div>{!hideReaction && <ReaderReaction elementId={row.element_id} token={token} dark />}</section></MotionWrap>;
   }
 
   if (row.type === 'chapter') {
@@ -254,14 +254,14 @@ function StoryElement({ row, token, galleryRows }: { row: PublicTimelineRow; tok
     const chapterSubtitle = typeof row.metadata?.subtitle === 'string' ? row.metadata.subtitle : '';
     const chapterNumber = typeof row.metadata?.number === 'string' || typeof row.metadata?.number === 'number' ? String(row.metadata.number) : '';
     const chapterBackground = safeRemoteUrl(row.style?.backgroundImageUrl);
-    return <MotionWrap reduced={liteMotion}><section id={`chapter-${row.element_id}`} className="relative mx-auto flex min-h-[76vh] max-w-page flex-col items-center justify-center overflow-hidden px-6 py-20 text-center text-[#F4EFE6]" style={chapterBackground ? { backgroundImage: `linear-gradient(rgba(8,7,9,.48),rgba(8,7,9,.78)),url(${JSON.stringify(chapterBackground)})`, backgroundSize: 'cover', backgroundPosition: String(row.style?.backgroundPosition ?? 'center') } : { background: bgByZone[zone] ?? bgByZone.default }}><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative z-10 max-w-[370px]"><div className="text-[10px] uppercase tracking-[4px] text-gold/65">{chapterNumber ? `глава ${chapterNumber}` : 'новая глава'}</div><div className="mx-auto my-8 h-px w-16 bg-gold/45"/><h2 className="overflow-wrap-anywhere font-serif text-[48px] leading-[1.04] text-[#F4EFE6] drop-shadow-lg">{chapterTitle}</h2>{chapterSubtitle && <p className="mt-7 font-script text-2xl leading-relaxed text-[#F4EFE6]/70">{chapterSubtitle}</p>}<div className="mx-auto mt-11 text-2xl text-gold/65">♡</div></div><div className="relative z-10 w-full"><ReaderReaction elementId={row.element_id} token={token} dark /></div></section></MotionWrap>;
+    return <MotionWrap reduced={liteMotion}><section id={`chapter-${row.element_id}`} className="relative mx-auto flex min-h-[76vh] max-w-page flex-col items-center justify-center overflow-hidden px-6 py-20 text-center text-[#F4EFE6]" style={chapterBackground ? { backgroundImage: `linear-gradient(rgba(8,7,9,.48),rgba(8,7,9,.78)),url(${JSON.stringify(chapterBackground)})`, backgroundSize: 'cover', backgroundPosition: String(row.style?.backgroundPosition ?? 'center') } : { background: bgByZone[zone] ?? bgByZone.default }}><div aria-hidden className="cinema-vignette absolute inset-0"/><div className="relative z-10 max-w-[370px]"><div className="text-[10px] uppercase tracking-[4px] text-gold/65">{chapterNumber ? `глава ${chapterNumber}` : 'новая глава'}</div><div className="mx-auto my-8 h-px w-16 bg-gold/45"/><h2 className="overflow-wrap-anywhere font-serif text-[48px] leading-[1.04] text-[#F4EFE6] drop-shadow-lg">{chapterTitle}</h2>{chapterSubtitle && <p className="mt-7 font-script text-2xl leading-relaxed text-[#F4EFE6]/70">{chapterSubtitle}</p>}<div className="mx-auto mt-11 text-2xl text-gold/65">♡</div></div>{!hideReaction && <div className="relative z-10 w-full"><ReaderReaction elementId={row.element_id} token={token} dark /></div>}</section></MotionWrap>;
   }
 
-  if (row.type === 'year_break') return <MotionWrap reduced={liteMotion}><section className="mx-auto flex min-h-[64vh] max-w-page flex-col items-center justify-center bg-[#0B0B0D] px-6 py-20 text-center text-[#F4EFE6]"><div><div className="mx-auto mb-7 h-px w-16 bg-gold/55"/><div className="font-serif text-[72px] font-medium leading-none text-[#F4EFE6]">{year(row.occurred_at)}</div><div className="mx-auto mt-6 h-px w-28 bg-gold/30"/><p className="mt-5 font-script text-2xl text-gold/70">ещё одна глава</p></div><ReaderReaction elementId={row.element_id} token={token} dark /></section></MotionWrap>;
+  if (row.type === 'year_break') return <MotionWrap reduced={liteMotion}><section className="mx-auto flex min-h-[64vh] max-w-page flex-col items-center justify-center bg-[#0B0B0D] px-6 py-20 text-center text-[#F4EFE6]"><div><div className="mx-auto mb-7 h-px w-16 bg-gold/55"/><div className="font-serif text-[72px] font-medium leading-none text-[#F4EFE6]">{year(row.occurred_at)}</div><div className="mx-auto mt-6 h-px w-28 bg-gold/30"/><p className="mt-5 font-script text-2xl text-gold/70">ещё одна глава</p></div>{!hideReaction && <ReaderReaction elementId={row.element_id} token={token} dark />}</section></MotionWrap>;
 
   if (row.type === 'on_this_day') {
     const previous = typeof row.metadata?.previous_text === 'string' ? row.metadata.previous_text : null;
-    return <MotionWrap reduced={liteMotion}><section className="mx-auto flex min-h-[42vh] max-w-page flex-col items-center justify-center bg-[#111012] px-6 py-16"><div className="w-full border-l border-gold/45 px-6 py-10 text-[#F4EFE6]"><div className="font-script text-2xl text-gold">в этот день</div><div className="mt-2 font-serif text-2xl text-[#F4EFE6]">{wallClockDate(row.occurred_at)}</div>{previous && <p className="mt-6 whitespace-pre-wrap font-serif text-xl italic leading-relaxed text-[#F4EFE6]/75">«{previous}»</p>}</div><div className="w-full"><ReaderReaction elementId={row.element_id} token={token} dark /></div></section></MotionWrap>;
+    return <MotionWrap reduced={liteMotion}><section className="mx-auto flex min-h-[42vh] max-w-page flex-col items-center justify-center bg-[#111012] px-6 py-16"><div className="w-full border-l border-gold/45 px-6 py-10 text-[#F4EFE6]"><div className="font-script text-2xl text-gold">в этот день</div><div className="mt-2 font-serif text-2xl text-[#F4EFE6]">{wallClockDate(row.occurred_at)}</div>{previous && <p className="mt-6 whitespace-pre-wrap font-serif text-xl italic leading-relaxed text-[#F4EFE6]/75">«{previous}»</p>}</div>{!hideReaction && <div className="w-full"><ReaderReaction elementId={row.element_id} token={token} dark /></div>}</section></MotionWrap>;
   }
 
   // BUGFIX: memory/special-moment text (`memory_body`, typed in Admin →
@@ -364,7 +364,7 @@ function StoryElement({ row, token, galleryRows }: { row: PublicTimelineRow; tok
           {framedTextNode}
         </>}
         {row.screenshot_reaction_emoji && <div className="mx-auto mt-6 max-w-[330px] border-t border-white/10 px-4 py-4 text-center text-white/75"><span className="text-xl">{row.screenshot_reaction_emoji}</span>{row.screenshot_reaction_text && <p className="mt-1 overflow-wrap-anywhere font-script text-lg">{row.screenshot_reaction_text}</p>}</div>}
-        <ReaderReaction elementId={row.element_id} token={token} dark />
+        {!hideReaction && <ReaderReaction elementId={row.element_id} token={token} dark />}
       </div>
     </article>
   );

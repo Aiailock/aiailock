@@ -13,7 +13,8 @@
     "test:media": "node --import tsx server/media/selfTest.ts",
     "test:ai": "node --import tsx server/ai/selfTest.ts",
     "test:director": "node --import tsx server/ai/directorSelfTest.ts",
-    "test": "npm run test:parser && npm run test:media && npm run test:ai && npm run test:director"
+    "test:reader-book": "node --import tsx server/reader/bookSelfTest.ts",
+    "test": "npm run test:parser && npm run test:media && npm run test:ai && npm run test:director && npm run test:reader-book"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

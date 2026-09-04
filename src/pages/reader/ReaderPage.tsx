@@ -1,18 +1,13 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, Heart, LockKeyhole, ScrollText, Sparkles } from 'lucide-react';
+import { ArrowDown, Heart, LockKeyhole, Sparkles } from 'lucide-react';
 import TimelineStory from '@/components/reader/TimelineStory';
 import { fetchReaderSettings, requestReaderAccess } from '@/lib/readerApi';
-import { ReaderSettingsContext, prefersLiteReaderMotion, readDisplaySettingsFromTheme, type ReaderDisplaySettings, type ReaderModeId } from '@/lib/readerSettingsContext';
+import { ReaderSettingsContext, prefersLiteReaderMotion, readDisplaySettingsFromTheme, type ReaderDisplaySettings } from '@/lib/readerSettingsContext';
 import { safeRemoteUrl } from '@/lib/safeUrl';
 import BackgroundMusic from '@/components/reader/BackgroundMusic';
 
 const TOKEN_KEY = 'for-you-reader-token';
 const DISPLAY_SETTINGS_KEY = 'for-you-display-settings-v1';
-const READER_MODE_KEY = 'for-you-reader-mode-v1';
-
-function savedReaderMode(): ReaderModeId {
-  return localStorage.getItem(READER_MODE_KEY) === 'scroll' ? 'scroll' : 'book';
-}
 
 function cachedDisplaySettings(): ReaderDisplaySettings {
   try {
@@ -57,7 +52,6 @@ export default function ReaderPage() {
   const [error, setError] = useState<string | null>(null);
   const [checkingPassword, setCheckingPassword] = useState(false);
   const [displaySettings, setDisplaySettings] = useState<ReaderDisplaySettings>(cachedDisplaySettings);
-  const [readerMode, setReaderMode] = useState<ReaderModeId>(savedReaderMode);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,17 +96,6 @@ export default function ReaderPage() {
     root.dataset.readerMotion = prefersLiteReaderMotion(displaySettings.motionMode) ? 'lite' : 'full';
     return () => { delete root.dataset.readerMotion; };
   }, [displaySettings.motionMode]);
-
-  useEffect(() => {
-    document.documentElement.dataset.readerLayout = readerMode;
-    localStorage.setItem(READER_MODE_KEY, readerMode);
-    return () => { delete document.documentElement.dataset.readerLayout; };
-  }, [readerMode]);
-
-  function beginReading(mode: ReaderModeId) {
-    setReaderMode(mode);
-    window.requestAnimationFrame(() => document.getElementById('story-start')?.scrollIntoView({ behavior: 'smooth' }));
-  }
 
   async function unlock() {
     setCheckingPassword(true);
@@ -164,13 +147,7 @@ export default function ReaderPage() {
         <Heart size={21} strokeWidth={1.2} className="relative mb-7 text-gold/75" />
         <h1 className="relative max-w-[390px] overflow-wrap-anywhere font-serif text-[50px] font-medium leading-[1.04] tracking-wide text-[#F4EFE6] drop-shadow-lg sm:text-6xl">{title}</h1>
         <p className="relative mt-6 max-w-xs font-script text-2xl leading-relaxed text-[#F4EFE6]/62">{displaySettings.coverSubtitle}</p>
-        <div className="relative mt-12 w-full max-w-[360px]">
-          <div className="text-[9px] uppercase tracking-[3px] text-gold/55">как тебе хочется читать?</div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => beginReading('book')} className={`rounded-2xl border px-3 py-4 text-left transition ${readerMode === 'book' ? 'border-gold/55 bg-gold/10 shadow-[0_0_30px_rgba(201,160,99,.12)]' : 'border-white/10 bg-white/[.035]'}`}><BookOpen size={18} className="text-gold"/><span className="mt-2 block font-serif text-lg">Как книгу</span><span className="mt-1 block text-[10px] leading-relaxed text-white/40">свайп справа налево</span></button>
-            <button type="button" onClick={() => beginReading('scroll')} className={`rounded-2xl border px-3 py-4 text-left transition ${readerMode === 'scroll' ? 'border-gold/55 bg-gold/10 shadow-[0_0_30px_rgba(201,160,99,.12)]' : 'border-white/10 bg-white/[.035]'}`}><ScrollText size={18} className="text-gold"/><span className="mt-2 block font-serif text-lg">Лентой</span><span className="mt-1 block text-[10px] leading-relaxed text-white/40">листать вниз</span></button>
-          </div>
-        </div>
+        <button type="button" onClick={() => document.getElementById('story-start')?.scrollIntoView({ behavior: 'smooth' })} className="relative mt-14 flex flex-col items-center gap-3 text-[9px] uppercase tracking-[3px] text-gold/55"><span>начать путешествие</span><span className="flex h-10 w-10 items-center justify-center rounded-full border border-gold/20"><ArrowDown size={15}/></span></button>
       </section>
       {empty ? (
         <section className="mx-auto flex min-h-[45vh] max-w-page items-center justify-center px-6 pb-32 text-center">
@@ -180,7 +157,7 @@ export default function ReaderPage() {
               <br />Но место для неё уже есть.</p>
           </div>
         </section>
-      ) : <div id="story-start"><ReaderSettingsContext.Provider value={displaySettings}><TimelineStory token={token} track={!isPreview} readingMode={readerMode} onReadingModeChange={setReaderMode} /></ReaderSettingsContext.Provider></div>}
+      ) : <div id="story-start"><ReaderSettingsContext.Provider value={displaySettings}><TimelineStory token={token} track={!isPreview} /></ReaderSettingsContext.Provider></div>}
       <div className="px-6 pb-20 pt-8 text-center">
         <div className="mx-auto h-px w-16 bg-gold/45" />
         <p className="mt-4 font-script text-2xl text-[#F4EFE6]/55">{displaySettings.closingMessage}</p>

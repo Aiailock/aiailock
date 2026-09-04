@@ -16,7 +16,6 @@ export type DateStyleId = 'line' | 'centered' | 'ribbon' | 'handwritten' | 'caps
 export type LoaderStyleId = 'hearts' | 'sparkles' | 'minimal';
 export type MotionModeId = 'auto' | 'full' | 'lite';
 export type BackgroundMusicModeId = 'built_in' | 'custom' | 'off';
-export type ReaderModeId = 'scroll' | 'book';
 
 export const TIME_FORMAT_OPTIONS: { id: TimeFormatId; label: string; hint: string }[] = [
   { id: 'default', label: 'Обычный', hint: '3 марта 2024 · 21:40' },

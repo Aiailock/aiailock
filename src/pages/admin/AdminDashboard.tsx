@@ -1948,7 +1948,7 @@ function TimelinePanel({ refreshKey }: { refreshKey: number }) {
                   kind: "gif",
                   sourceUrl: insertGifAsset?.sourceUrl ?? null,
                   sourceTitle: insertGifAsset?.title ?? null,
-                  sourceProvider: insertGifAsset ? insertGifAsset.provider ?? "Wikimedia Commons" : null,
+                  sourceProvider: insertGifAsset ? "Wikimedia Commons" : null,
                 }
             : interactive
               ? { kind: "interactive", interaction: insertKind, options: ["Да", "Конечно", "Очень", "Расскажу позже"], results: [insertBody.trim(), insertBody.trim(), insertBody.trim(), insertBody.trim()] }

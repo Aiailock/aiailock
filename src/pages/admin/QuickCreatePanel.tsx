@@ -384,7 +384,7 @@ export default function QuickCreatePanel({ onCreated, onOpenTimeline }: { onCrea
                 options: [draft.optionA, draft.optionB, draft.optionC, draft.optionD].map((value, index) => value.trim() || ['Да', 'Конечно', 'Очень', 'Расскажу позже'][index]),
                 results: [draft.resultA, draft.resultB, draft.resultC, draft.resultD].map((value) => value.trim() || draft.body.trim()),
               }
-            : draft.kind === 'gif' ? { kind: 'gif', sourceUrl: gifSelection?.sourceUrl ?? null, sourceTitle: gifSelection?.title ?? null, sourceProvider: gifSelection ? gifSelection.provider ?? 'Wikimedia Commons' : null } : {};
+            : draft.kind === 'gif' ? { kind: 'gif', sourceUrl: gifSelection?.sourceUrl ?? null, sourceTitle: gifSelection?.title ?? null, sourceProvider: gifSelection ? 'Wikimedia Commons' : null } : {};
         if (isGif && !draft.body.trim()) style.hideText = true;
         const { error } = await supabase.from('memories').insert({
           id, title: draft.title.trim() || null,

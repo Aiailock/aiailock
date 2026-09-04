@@ -542,7 +542,7 @@ export default function LocalAiStoryDirector() {
                     setCommonsSelections((current) => ({ ...current, [row.id]: asset }));
                     patchLocal(row.id, {
                       asset_url: asset.url,
-                      metadata: { ...row.metadata, sourceUrl: asset.sourceUrl, sourceTitle: asset.title, sourceProvider: asset.provider ?? 'Wikimedia Commons' },
+                      metadata: { ...row.metadata, sourceUrl: asset.sourceUrl, sourceTitle: asset.title, sourceProvider: 'Wikimedia Commons' },
                     });
                   }}/>
                   <label className="block text-xs">Или вставь свою прямую ссылку

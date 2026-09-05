@@ -57,6 +57,7 @@ Deno.serve(async (req) => {
       query = query.or(`is_reader_visible.eq.true,ai_batch_id.eq.${previewBatchId}`);
     }
 
+    let positionOffset = 0;
     if (resumeElementId) {
       let targetQuery = db
         .from(table)
@@ -66,6 +67,12 @@ Deno.serve(async (req) => {
       const { data: target, error: targetError } = await targetQuery.maybeSingle();
       if (targetError) throw new Error(targetError.message);
       if (!target) throw new HttpError(404, 'Сохранённое место больше недоступно. Начни чтение с текущей версии истории.');
+      let preceding = db.from(table).select('element_id', { count: 'exact', head: true })
+        .or(`display_order.lt.${target.display_order},and(display_order.eq.${target.display_order},element_id.lt.${target.element_id})`);
+      if (previewBatchId) preceding = preceding.or(`is_reader_visible.eq.true,ai_batch_id.eq.${previewBatchId}`);
+      const { count: precedingCount, error: precedingError } = await preceding;
+      if (precedingError) throw new Error(precedingError.message);
+      positionOffset = precedingCount ?? 0;
       if (typeof target?.display_order === 'number') query = query.or(
         `display_order.gt.${target.display_order},and(display_order.eq.${target.display_order},element_id.gte.${target.element_id})`,
       );
@@ -107,6 +114,17 @@ Deno.serve(async (req) => {
     });
     const hasMore = rows.length > PAGE_SIZE;
     const page = rows.slice(0, PAGE_SIZE);
+    if (page.length) {
+      const { data: notes, error: notesError } = await db.from('chapter_support')
+        .select('id,anchor_id,placement,title,body,signature,style,created_at')
+        .in('anchor_id', page.map((row: Record<string, unknown>) => row.element_id))
+        .eq('published', true).order('created_at').order('id');
+      if (notesError) throw new Error(notesError.message);
+      for (const row of page) {
+        row.support_before = (notes ?? []).filter((n: Record<string, unknown>) => n.anchor_id === row.element_id && n.placement === 'before');
+        row.support_after = (notes ?? []).filter((n: Record<string, unknown>) => n.anchor_id === row.element_id && n.placement === 'after');
+      }
+    }
     const last = page[page.length - 1] as Record<string, unknown> | undefined;
     return json({
       elements: page,
@@ -118,6 +136,7 @@ Deno.serve(async (req) => {
         id: last.element_id,
       } : null,
       resumedFrom: resumeElementId,
+      positionOffset,
       previewBatchId,
       chapters,
       total: totalResult.count ?? rows.length,

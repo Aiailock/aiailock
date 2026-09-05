@@ -1,3 +1,4 @@
+import type { SupportNote } from './chapterSupport';
 import { supabase } from './supabaseClient';
 
 function activeAiPreviewBatchId(): string | null {
@@ -21,6 +22,8 @@ export interface PublicChapterSummary {
 }
 
 export interface PublicTimelineRow {
+  support_before?: SupportNote[];
+  support_after?: SupportNote[];
   element_id: string;
   type: string;
   occurred_at: string;
@@ -104,6 +107,7 @@ export async function fetchPublicTimeline(cursor: PublicTimelineCursor | null, t
   nextCursor: PublicTimelineCursor | null;
   chapters: PublicChapterSummary[];
   total: number | null;
+  positionOffset: number;
 }> {
   const { data, error } = await supabase.functions.invoke('public-timeline', {
     body: { cursor, previewBatchId: activeAiPreviewBatchId() },
@@ -116,6 +120,7 @@ export async function fetchPublicTimeline(cursor: PublicTimelineCursor | null, t
     nextCursor: data?.nextCursor ?? null,
     chapters: (data?.chapters ?? []) as PublicChapterSummary[],
     total: typeof data?.total === 'number' ? data.total : null,
+    positionOffset: typeof data?.positionOffset === 'number' ? data.positionOffset : 0,
   };
 }
 
@@ -130,6 +135,7 @@ export async function fetchResumeTimeline(elementId: string, token: string): Pro
   nextCursor: PublicTimelineCursor | null;
   chapters: PublicChapterSummary[];
   total: number | null;
+  positionOffset: number;
 }> {
   const { data, error } = await supabase.functions.invoke('public-timeline', {
     body: { resumeElementId: elementId, previewBatchId: activeAiPreviewBatchId() },
@@ -142,6 +148,7 @@ export async function fetchResumeTimeline(elementId: string, token: string): Pro
     nextCursor: data?.nextCursor ?? null,
     chapters: (data?.chapters ?? []) as PublicChapterSummary[],
     total: typeof data?.total === 'number' ? data.total : null,
+    positionOffset: typeof data?.positionOffset === 'number' ? data.positionOffset : 0,
   };
 }
 
@@ -227,6 +234,12 @@ function collectDeviceInfo(): Record<string, unknown> {
   };
 }
 
+let analyticsEpoch: Promise<number | null> | undefined;
+function sessionAnalyticsEpoch() {
+  // Snapshot once per page lifetime. Reset invalidates old open tabs.
+  return analyticsEpoch ??= Promise.resolve(supabase.from('reader_live_state').select('analytics_epoch').eq('id', true).single()
+    .then(({ data, error }) => error ? null : Number(data.analytics_epoch)));
+}
 export async function recordReaderAnalytics(input: {
   action: ReaderAnalyticsAction;
   visitorId: string;
@@ -236,9 +249,12 @@ export async function recordReaderAnalytics(input: {
   progress?: number;
   chapter?: string;
 }, token: string): Promise<{ total: number | null }> {
+  const epoch = await sessionAnalyticsEpoch();
+  if (epoch === null) return { total: null };
   const { data, error } = await supabase.functions.invoke('reader-analytics', {
     body: {
       ...input,
+      analyticsEpoch: epoch,
       userAgent: input.action === 'open' ? navigator.userAgent : undefined,
       viewportWidth: input.action === 'open' ? window.innerWidth : undefined,
       deviceInfo: input.action === 'open' ? collectDeviceInfo() : undefined,
@@ -286,22 +302,22 @@ export async function recordReaderInteractionAnswer(input: {
   if (error || data?.error) throw new Error(error?.message ?? data?.error ?? 'Не удалось сохранить ответ.');
 }
 
-export type ReaderMediaInput = { mediaId?: string; screenshotId?: string; memoryId?: string };
+export type ReaderMediaInput = { mediaId?: string; screenshotId?: string; memoryId?: string; version?: string };
 export interface ReaderMediaUrl { url: string; thumbnailUrl: string | null }
 
 const mediaUrlCache = new Map<string, ReaderMediaUrl>();
 const mediaUrlRequests = new Map<string, Promise<ReaderMediaUrl>>();
 
 function mediaInputKey(input: ReaderMediaInput) {
-  if (input.mediaId) return `media:${input.mediaId}`;
-  if (input.screenshotId) return `screenshot:${input.screenshotId}`;
-  return `memory:${input.memoryId ?? ''}`;
+  if (input.mediaId) return `media:${input.mediaId}:${input.version ?? ""}`;
+  if (input.screenshotId) return `screenshot:${input.screenshotId}:${input.version ?? ""}`;
+  return `memory:${input.memoryId ?? ''}:${input.version ?? ''}`;
 }
 
 export function readerMediaInput(row: PublicTimelineRow): ReaderMediaInput | null {
-  if (row.media_id) return { mediaId: row.media_id };
-  if (row.screenshot_id) return { screenshotId: row.screenshot_id };
-  if (row.memory_id && row.memory_photo_storage_path) return { memoryId: row.memory_id };
+  if (row.media_id) return { mediaId: row.media_id, version: `${row.storage_path}:${row.thumbnail_path}` };
+  if (row.screenshot_id) return { screenshotId: row.screenshot_id, version: row.screenshot_storage_path ?? "" };
+  if (row.memory_id && row.memory_photo_storage_path) return { memoryId: row.memory_id, version: row.memory_photo_storage_path };
   return null;
 }
 

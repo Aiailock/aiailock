@@ -46,6 +46,7 @@ import {
   type TimeFormatId,
 } from "@/lib/readerSettingsContext";
 import AnalyticsPanel from "./AnalyticsPanel";
+import SupportStudio from "./SupportStudio";
 import { ALIGN_OPTIONS, DATE_STYLE_OPTIONS, FONT_OPTIONS } from "@/lib/styleOptions";
 import QuickCreatePanel from "./QuickCreatePanel";
 import { safeRemoteUrl } from "@/lib/safeUrl";
@@ -138,6 +139,7 @@ interface MediaRow {
 type Tab =
   | "dashboard"
   | "create"
+  | "support"
   | "analytics"
   | "safety"
   | "import"
@@ -154,6 +156,7 @@ const tabs: Array<[Tab, string]> = [
   ["dashboard", "Обзор"],
   ["create", "Добавить"],
   ["analytics", "Чтение"],
+  ["support", "Слова для неё"],
   ["safety", "Сохранность"],
   ["timeline", "История"],
   ["memories", "Воспоминания"],
@@ -167,13 +170,13 @@ const tabs: Array<[Tab, string]> = [
   ["preview", "Preview"],
 ];
 const tabIcons: Record<Tab, typeof BarChart3> = {
-  dashboard: BarChart3, create: Plus, analytics: Activity, safety: ShieldCheck, timeline: CheckSquare2, memories: Star,
+  support: Sparkles, dashboard: BarChart3, create: Plus, analytics: Activity, safety: ShieldCheck, timeline: CheckSquare2, memories: Star,
   special: Sparkles, screenshots: ImagePlus, media: Images, import: FileArchive,
   ai: Sparkles, director: Sparkles, settings: Settings2, preview: Eye,
 };
 const navGroups: Array<{ label: string; items: Tab[] }> = [
   { label: "Главное", items: ["dashboard", "create", "timeline", "preview"] },
-  { label: "Контент", items: ["memories", "special", "screenshots", "media", "import"] },
+  { label: "Контент", items: ["support", "memories", "special", "screenshots", "media", "import"] },
   { label: "Умные инструменты", items: ["ai", "director"] },
   { label: "Контроль", items: ["analytics", "safety", "settings"] },
 ];
@@ -283,6 +286,7 @@ export default function AdminDashboard() {
           <DashboardPanel onTab={openTab} refreshKey={refreshKey} />
         )}
         {tab === "analytics" && <AnalyticsPanel />}
+        {tab === "support" && <SupportStudio />}
         {tab === "safety" && <SafetyPanel />}
         {tab === "create" && <QuickCreatePanel onCreated={() => setRefreshKey((x) => x + 1)} onOpenTimeline={() => openTab("timeline")} />}
         {tab === "import" && (

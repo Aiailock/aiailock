@@ -1,3 +1,4 @@
+import { getOrCreateReaderVisitorId } from '@/lib/readerApi';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity, BookOpenCheck, CheckCircle2, Clock3, Cpu, Globe2, Heart,
@@ -177,11 +178,17 @@ export default function AnalyticsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showClear, setShowClear] = useState(false);
-  const [includeReactions, setIncludeReactions] = useState(true);
+  const [includeReactions, setIncludeReactions] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [myVisitorId] = useState(getOrCreateReaderVisitorId);
+  const [excluded, setExcluded] = useState<string[]>([]);
+  const [success, setSuccess] = useState('');
+
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
+    const exclusions = await supabase.from('reader_ignored_visitors').select('visitor_id');
+    if (!exclusions.error) setExcluded((exclusions.data ?? []).map((row) => row.visitor_id));
     const [visitorResult, visitResult, reactionResult, answerResult] = await Promise.all([
       supabase.from('reader_visitors').select('visitor_id,first_seen_at,last_seen_at,visit_count,last_element_id,last_element_at,last_element_type,last_element_label,last_element_preview,last_chapter,max_position,max_progress,completed_at,user_agent,viewport_width,device_info,country_code').order('last_seen_at', { ascending: false }),
       supabase.from('reader_visits').select('id,visitor_id,opened_at,last_seen_at,last_element_id,last_element_at,last_element_type,last_element_label,last_element_preview,last_chapter,max_position,max_progress,completed_at,user_agent,viewport_width,device_info,country_code').order('opened_at', { ascending: false }).limit(100),
@@ -234,27 +241,48 @@ export default function AnalyticsPanel() {
     };
   }, [visitors]);
 
+  async function excludeVisitor(id: string, exclude: boolean) {
+    if (exclude && !window.confirm(id === myVisitorId ? 'Удалить мои посещения и больше не учитывать этот браузер?' : 'Удалить посещения этого устройства и исключить его из статистики?')) return;
+    setClearing(true); setError(''); setSuccess('');
+    try {
+      const { error: problem } = await supabase.rpc('admin_set_reader_excluded', { p_visitor_id: id, p_excluded: exclude });
+      if (problem) throw problem;
+      await load(); setSuccess(exclude ? 'Посещения удалены. Устройство больше не учитывается.' : 'Учёт включён. Новые посещения появятся после открытия reader.');
+    } catch (e) { setError((e as { message?: string }).message ?? 'Не удалось изменить учёт.'); }
+    finally { setClearing(false); }
+  }
+
   async function clearAnalytics() {
     setClearing(true); setError('');
-    const { error: clearError } = await supabase.rpc('admin_clear_reader_analytics', { p_include_reactions: includeReactions });
-    if (clearError) setError(clearError.message);
-    else {
+    try {
+      const { data, error: clearError } = await supabase.rpc('admin_clear_reader_analytics', { p_include_reactions: includeReactions });
+      if (clearError) throw clearError;
+      localStorage.removeItem('for-you-reading-place-v3');
       setShowClear(false);
       await load();
-    }
-    setClearing(false);
+      setSuccess(`Удалено устройств: ${data?.visitors ?? 0}, посещений: ${data?.visits ?? 0}. Старые вкладки не восстановят удалённые записи. Новое открытие reader начнёт новый учёт.`);
+    } catch (e) { setError((e as { message?: string }).message ?? 'Не удалось очистить.'); }
+    finally { setClearing(false); }
   }
 
   const lastPoint = summary.last?.last_element_id ? points[summary.last.last_element_id] : undefined;
 
   return <section className="space-y-5">
     <div className="flex flex-wrap items-end justify-between gap-3 rounded-[28px] bg-gradient-to-br from-[#371525] to-burgundy p-6 text-white shadow-xl">
-      <div><div className="text-[10px] uppercase tracking-[2.5px] text-white/45">reader activity</div><h1 className="mt-2 font-serif text-4xl">Она читала?</h1><p className="mt-2 max-w-xl text-sm leading-relaxed text-white/60">Открытия, устройства, длительность посещений и точное место, до которого она дошла. Preview администратора не записывается.</p></div>
+      <div><div className="text-[10px] uppercase tracking-[2.5px] text-white/45">reader activity</div><h1 className="mt-2 font-serif text-4xl">Чтение истории</h1><p className="mt-2 max-w-xl text-sm leading-relaxed text-white/60">Открытия, устройства, длительность посещений и последняя прочитанная точка. Имя читателя по устройству определить нельзя. Preview администратора не записывается.</p></div>
       <div className="flex gap-2">
         <button type="button" onClick={() => setShowClear((value) => !value)} className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-xs text-white/75"><Trash2 size={14} className="mr-1 inline" />Очистить</button>
         <button type="button" onClick={() => void load()} className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-xs"><RefreshCw size={14} className={`mr-1 inline ${loading ? 'animate-spin' : ''}`} />Обновить</button>
       </div>
     </div>
+
+    <div className="rounded-[24px] border border-burgundy/10 bg-white p-5 text-burgundy">
+      <h2 className="font-serif text-2xl">Мои проверки сайта</h2>
+      <p className="mt-2 text-sm">Этот браузер: {excluded.includes(myVisitorId) ? 'исключён из статистики' : 'учитывается'}. Можно убрать только свои посещения, сохранив остальные.</p>
+      <button disabled={clearing} onClick={() => void excludeVisitor(myVisitorId, !excluded.includes(myVisitorId))} className="mt-4 min-h-11 rounded-xl bg-burgundy px-4 py-3 text-sm text-white disabled:opacity-50">{excluded.includes(myVisitorId) ? 'Снова учитывать мой браузер' : 'Удалить мои посещения и не учитывать меня'}</button>
+      {excluded.filter((id) => id !== myVisitorId).length > 0 && <details className="mt-4"><summary className="cursor-pointer text-sm">Другие исключённые устройства</summary>{excluded.filter((id) => id !== myVisitorId).map((id) => <div key={id} className="mt-2 flex flex-wrap items-center gap-3 text-sm"><span>Устройство {id.slice(0,8)}</span><button disabled={clearing} onClick={() => void excludeVisitor(id, false)} className="min-h-11 underline">Вернуть учёт</button></div>)}</details>}
+    </div>
+    {success && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900">{success}</p>}
 
     {showClear && <div className="rounded-[24px] border border-red-200 bg-red-50 p-5 text-red-950 shadow-sm">
       <div className="font-serif text-2xl">Очистить статистику чтения?</div>
@@ -266,7 +294,7 @@ export default function AnalyticsPanel() {
     {error && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Примени все новые миграции и заново опубликуй Edge Functions по инструкции. {error}</div>}
 
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-      <Stat icon={Activity} label="Статус" value={summary.last ? 'Да, заходила' : 'Пока нет'} hint={summary.last ? `Последний раз: ${when(summary.last.last_seen_at)}` : 'Открытий ещё не было'} />
+      <Stat icon={Activity} label="Статус" value={summary.last ? 'Есть посещения' : 'Пока нет'} hint={summary.last ? `Последний раз: ${when(summary.last.last_seen_at)}` : 'Открытий ещё не было'} />
       <Stat icon={Clock3} label="Открытия" value={String(summary.visits)} hint={`${visitors.length} ${visitors.length === 1 ? 'устройство' : 'устройств'}`} />
       <Stat icon={BookOpenCheck} label="Дочитано" value={`${summary.progress}%`} hint={summary.last ? `До элемента №${summary.last.max_position}` : 'Пока нет данных'} />
       <Stat icon={CheckCircle2} label="Финал" value={summary.completed ? 'Дочитала' : 'Ещё нет'} hint={summary.completed ? 'История была пройдена до конца' : 'Последняя точка ещё не достигнута'} />
@@ -299,6 +327,7 @@ export default function AnalyticsPanel() {
             </div>
             <div className="mt-3 rounded-2xl bg-[#F6EFE0]/65 p-3"><PointSummary compact point={point} label={visitor.last_element_label ?? visitor.last_element_type} preview={visitor.last_element_preview} position={visitor.max_position} chapter={visitor.last_chapter} /></div>
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-burgundy/40"><span>Впервые: {when(visitor.first_seen_at)}</span><span>Последний раз: {when(visitor.last_seen_at)}</span><span>Прогресс: {visitor.max_progress}%</span></div>
+            <button disabled={clearing} onClick={() => void excludeVisitor(visitor.visitor_id, true)} className="mt-3 min-h-11 rounded-xl border border-red-200 px-4 py-2 text-sm text-red-800 disabled:opacity-50">{visitor.visitor_id === myVisitorId ? 'Это мой браузер · удалить и исключить' : 'Удалить и исключить устройство'}</button>
             {visitor.user_agent && <details className="mt-3 text-[10px] text-burgundy/40"><summary className="cursor-pointer select-none">Техническая строка браузера</summary><div className="mt-2 break-all rounded-xl bg-black/[.03] p-3 font-mono leading-relaxed">{visitor.user_agent}</div></details>}
           </article>;
         })}

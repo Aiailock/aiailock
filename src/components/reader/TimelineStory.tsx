@@ -1,3 +1,6 @@
+import { refreshReaderWindow } from '@/lib/refreshReaderWindow';
+import { READER_CHANGED, READER_RESET } from '@/lib/readerLive';
+import SupportCard from './SupportCard';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowDown,
@@ -241,12 +244,16 @@ export default function TimelineStory({ token, track = true }: { token: string; 
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState('');
+  const [liveMessage, setLiveMessage] = useState('');
+  const snapshot = useRef({ rows, positionOffset, resumeLoading });
+  snapshot.current = { rows, positionOffset, resumeLoading };
   const runId = useRef(0);
   const cursorRef = useRef<PublicTimelineCursor | null>(null);
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const reportTimer = useRef(0);
+  const analyticsPaused = useRef(false);
   const visitId = useRef(crypto.randomUUID());
   const lastReported = useRef({ id: '', progress: 0 });
 
@@ -270,6 +277,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
       if (currentRun !== runId.current) return;
       const ordered = [...result.elements].sort(comparePublicTimelineRows);
       setRows(ordered);
+      setPositionOffset(result.positionOffset);
       setAllChapters(result.chapters);
       if (result.total !== null) setTotal(result.total);
       setPaging(result.nextCursor, result.hasMore);
@@ -303,6 +311,63 @@ export default function TimelineStory({ token, track = true }: { token: string; 
     });
     return () => window.cancelAnimationFrame(firstFrame);
   }, [booting, previewTargetElementId, rows]);
+
+  useEffect(() => {
+    if (booting) return;
+    let cancelled = false;
+    let pending = false;
+    let running = false;
+    let timer = 0;
+    const refresh = async () => {
+      if (cancelled || !pending) return;
+      if (running || loadingMoreRef.current || snapshot.current.resumeLoading) { timer = window.setTimeout(() => void refresh(), 500); return; }
+      pending = false; running = true; loadingMoreRef.current = true;
+      setLiveMessage('Обновляю страницы…');
+      const visible = Array.from(document.querySelectorAll<HTMLElement>('[data-reader-element]'))
+        .filter((el) => el.getBoundingClientRect().bottom > 0);
+      const anchors = visible.slice(0, 5).map((el) => ({ id: el.dataset.readerElement, top: el.getBoundingClientRect().top }));
+      const scrollBefore = window.scrollY;
+      try {
+        const result = await refreshReaderWindow(snapshot.current, {
+          first: () => fetchPublicTimeline(null, token),
+          resume: (id) => fetchResumeTimeline(id, token),
+          next: (cursor) => fetchPublicTimeline(cursor, token),
+        }, () => cancelled);
+        const offset = result.positionOffset;
+        const nextRows = result.elements;
+        if (cancelled) return;
+        // Replace the window so removed/hidden rows disappear too.
+        setRows(Array.from(new Map(nextRows.map((row) => [row.element_id, row])).values()).sort(comparePublicTimelineRows));
+        setPositionOffset(offset); setAllChapters(result.chapters); setTotal(result.total);
+        setPaging(result.nextCursor, result.hasMore);
+        setLiveMessage('История обновлена');
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+          if (cancelled || Math.abs(window.scrollY - scrollBefore) > 100) return;
+          for (const anchor of anchors) {
+            const element = document.querySelector<HTMLElement>(`[data-reader-element="${anchor.id}"]`);
+            if (element) { window.scrollBy({ top: element.getBoundingClientRect().top - anchor.top, behavior: 'instant' as ScrollBehavior }); break; }
+          }
+        }));
+      } catch {
+        if (!cancelled) { setLiveMessage('Не удалось обновить · повторим автоматически'); pending = true; }
+      } finally {
+        running = false; loadingMoreRef.current = false;
+        if (pending && !cancelled) timer = window.setTimeout(() => void refresh(), 1500);
+      }
+    };
+    const schedule = () => { pending = true; window.clearTimeout(timer); timer = window.setTimeout(() => void refresh(), 250); };
+    const reset = () => {
+      analyticsPaused.current = true;
+      localStorage.removeItem(READING_PLACE_KEY);
+      setReadingPlace(null); setShowResumeCard(false); setReadProgress(0);
+      window.clearTimeout(reportTimer.current);
+    };
+    window.addEventListener(READER_CHANGED, schedule);
+    window.addEventListener(READER_RESET, reset);
+    // Catch changes that arrived while initial pages were loading.
+    schedule();
+    return () => { cancelled = true; window.clearTimeout(timer); window.removeEventListener(READER_CHANGED, schedule); window.removeEventListener(READER_RESET, reset); };
+  }, [booting, token, setPaging]);
 
   const loadMore = useCallback(async () => {
     const cursor = cursorRef.current;
@@ -340,6 +405,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
   }, [booting, hasMore, loadMore]);
 
   const resumeFromSavedPlace = useCallback(async () => {
+    if (loadingMoreRef.current) return;
     if (!readingPlace || resumeLoading) return;
     if (rows.some((row) => row.element_id === readingPlace.elementId)) {
       setShowResumeCard(false);
@@ -351,8 +417,8 @@ export default function TimelineStory({ token, track = true }: { token: string; 
     try {
       const result = await fetchResumeTimeline(readingPlace.elementId, token);
       const ordered = [...result.elements].sort(comparePublicTimelineRows);
-      setPositionOffset(Math.max(0, readingPlace.position - 1));
       setRows(ordered);
+      setPositionOffset(result.positionOffset);
       setAllChapters(result.chapters);
       if (result.total !== null) setTotal(result.total);
       setPaging(result.nextCursor, result.hasMore);
@@ -368,7 +434,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
     }
   }, [readingPlace, resumeLoading, rows, setPaging, token]);
 
-  const jumpToElement = useCallback(async (elementId: string, position?: number) => {
+  const jumpToElement = useCallback(async (elementId: string, _position?: number) => {
     if (rows.some((row) => row.element_id === elementId)) {
       scrollToElement(elementId);
       return;
@@ -380,8 +446,8 @@ export default function TimelineStory({ token, track = true }: { token: string; 
     try {
       const result = await fetchResumeTimeline(elementId, token);
       const ordered = [...result.elements].sort(comparePublicTimelineRows);
-      setPositionOffset(Math.max(0, Number(position || 1) - 1));
       setRows(ordered);
+      setPositionOffset(result.positionOffset);
       setAllChapters(result.chapters);
       if (result.total !== null) setTotal(result.total);
       setPaging(result.nextCursor, result.hasMore);
@@ -435,7 +501,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
   }, [positionOffset, readingPlace?.chapter, renderedRows]);
 
   useEffect(() => {
-    if (!track || booting) return;
+    if (!track || booting || analyticsPaused.current) return;
     const key = 'for-you-reader-id';
     let visitorId = localStorage.getItem(key);
     if (!visitorId) { visitorId = crypto.randomUUID(); localStorage.setItem(key, visitorId); }
@@ -450,6 +516,7 @@ export default function TimelineStory({ token, track = true }: { token: string; 
     if (!visitorId) return;
     const elements = Array.from(document.querySelectorAll<HTMLElement>('[data-reader-element]'));
     const observer = new IntersectionObserver((entries) => {
+      if (analyticsPaused.current) return;
       const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
       const target = visible[0]?.target as HTMLElement | undefined;
       if (!target) return;
@@ -488,13 +555,14 @@ export default function TimelineStory({ token, track = true }: { token: string; 
   }, [booting, elementMeta, hasMore, positionOffset, renderedRows.length, rows.length, token, total, track]);
 
   return <div className="w-full">
+    {liveMessage && <p role="status" className="sr-only">{liveMessage}</p>}
     <AnimatePresence>{booting && <JourneyLoader state={loader} onRetry={() => setRetryKey((value) => value + 1)} />}</AnimatePresence>
     {!booting && rows.length === 0 && <div className="mx-auto max-w-md px-6 py-28 text-center font-serif text-2xl opacity-55">Здесь пока пусто.</div>}
     {!booting && rows.length > 0 && <>
       <div className="pointer-events-none fixed inset-x-0 top-0 z-40 h-px bg-white/5"><div className="h-full bg-gold/80 transition-[width] duration-700" style={{ width: `${readProgress}%` }} /></div>
       {currentChapter && <div className="pointer-events-none fixed inset-x-0 top-3 z-30 text-center"><span className="inline-block max-w-[78vw] truncate rounded-full bg-black/35 px-4 py-1.5 text-[9px] uppercase tracking-[2px] text-gold/65 backdrop-blur-md">{currentChapter}</span></div>}
       {showResumeCard && readingPlace && <div className="flex min-h-[24vh] items-center justify-center bg-[#0B0B0D] px-6"><button type="button" disabled={resumeLoading} onClick={() => void resumeFromSavedPlace()} className="group border-y border-gold/25 px-7 py-6 text-center text-[#F4EFE6] transition hover:border-gold/50 disabled:opacity-55"><BookOpen className="mx-auto text-gold/70" size={20}/><span className="mt-3 block font-serif text-xl">{resumeLoading ? 'Открываю это место…' : 'Продолжить с места'}</span><span className="mt-1 block text-[10px] uppercase tracking-[2px] text-white/35">прочитано {readingPlace.progress}%{readingPlace.chapter ? ` · ${readingPlace.chapter}` : ''}</span></button></div>}
-      {chunks.map((chunk, chunkIndex) => <div className="story-page-chunk" key={chunk[0]?.row.element_id ?? chunkIndex}>{chunk.map(({ row, galleryRows, position }) => <div key={row.screenshot_collection_id ?? row.element_id} data-reader-element={row.element_id} data-reader-position={position}><StoryElement row={row} galleryRows={galleryRows} token={token} /></div>)}</div>)}
+      {chunks.map((chunk, chunkIndex) => <div className="story-page-chunk" key={chunk[0]?.row.element_id ?? chunkIndex}>{chunk.map(({ row, galleryRows, position }) => <div key={row.screenshot_collection_id ?? row.element_id} data-reader-element={row.element_id} data-reader-position={position}>{(galleryRows ?? [row]).flatMap((item) => item.support_before ?? []).map((note) => <SupportCard key={note.id} note={note}/>)}<StoryElement row={row} galleryRows={galleryRows} token={token} />{(galleryRows ?? [row]).flatMap((item) => item.support_after ?? []).map((note) => <SupportCard key={note.id} note={note}/>)}</div>)}</div>)}
       <div ref={sentinelRef} className="flex min-h-24 items-center justify-center bg-[#0B0B0D] px-6 text-center text-[#F4EFE6]/45">
         {loadingMore && <div><div className="story-loader-ring mx-auto h-7 w-7"/><div className="mt-3 text-[10px] uppercase tracking-[2px]">готовлю следующие страницы</div></div>}
         {!loadingMore && moreError && <button type="button" onClick={() => void loadMore()} className="rounded-full border border-gold/25 px-5 py-3 text-xs text-gold">Загрузить дальше ещё раз</button>}

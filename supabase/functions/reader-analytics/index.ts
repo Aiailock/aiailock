@@ -159,6 +159,14 @@ Deno.serve(async (req) => {
 
     const db = serviceClient();
     const now = new Date().toISOString();
+    const [{ data: state, error: stateError }, { data: ignored, error: ignoredError }] = await Promise.all([
+      db.from('reader_live_state').select('analytics_epoch').eq('id', true).single(),
+      db.from('reader_ignored_visitors').select('visitor_id').eq('visitor_id', visitorId).maybeSingle(),
+    ]);
+    if (stateError || ignoredError) throw new Error(stateError?.message ?? ignoredError?.message);
+    if (ignored || !Number.isSafeInteger(body.analyticsEpoch) || body.analyticsEpoch !== state.analytics_epoch) return json({ ok: true, ignored: true });
+    const analyticsEpoch = body.analyticsEpoch;
+
 
     if (action === 'open') {
       const details = deviceInfo(body.deviceInfo);
@@ -168,6 +176,7 @@ Deno.serve(async (req) => {
       const { data: existing } = await db.from('reader_visitors').select('visit_count').eq('visitor_id', visitorId).maybeSingle();
       const { error: visitorError } = await db.from('reader_visitors').upsert({
         visitor_id: visitorId,
+        analytics_epoch: analyticsEpoch,
         last_seen_at: now,
         visit_count: Number(existing?.visit_count ?? 0) + 1,
         user_agent: userAgent,
@@ -179,6 +188,7 @@ Deno.serve(async (req) => {
       const { error: visitError } = await db.from('reader_visits').upsert({
         id: visitId,
         visitor_id: visitorId,
+        analytics_epoch: analyticsEpoch,
         opened_at: now,
         last_seen_at: now,
         user_agent: userAgent,
@@ -215,11 +225,12 @@ Deno.serve(async (req) => {
     const visit = visitResult.data;
     const visitor = visitorResult.data;
 
-    // Restore the visitor first if the owner cleared analytics while this
-    // reading tab was still open. The visit row has a foreign key to it.
+    // Progress cannot recreate a cleared session. A new opening is required.
+    if (!visitor || !visit) return json({ ok: true, ignored: true });
     const visitorFurthest = position >= Number(visitor?.max_position ?? 0);
     const { error: visitorError } = await db.from('reader_visitors').upsert({
       visitor_id: visitorId,
+        analytics_epoch: analyticsEpoch,
       last_seen_at: now,
       visit_count: Math.max(1, Number(visitor?.visit_count ?? 1)),
       max_position: Math.max(position, Number(visitor?.max_position ?? 0)),
@@ -240,6 +251,7 @@ Deno.serve(async (req) => {
     const { error: visitError } = await db.from('reader_visits').upsert({
       id: visitId,
       visitor_id: visitorId,
+        analytics_epoch: analyticsEpoch,
       last_seen_at: now,
       max_position: Math.max(position, Number(visit?.max_position ?? 0)),
       max_progress: Math.max(progress, Number(visit?.max_progress ?? 0)),

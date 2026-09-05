@@ -1,3 +1,4 @@
+import { watchReader, READER_CHANGED } from '@/lib/readerLive';
 import { useEffect, useState } from 'react';
 import { ArrowDown, Heart, LockKeyhole, Sparkles } from 'lucide-react';
 import TimelineStory from '@/components/reader/TimelineStory';
@@ -44,6 +45,7 @@ function tokenLooksFresh(token: string): boolean {
 
 export default function ReaderPage() {
   const isPreview = new URLSearchParams(window.location.search).get('preview') === '1';
+  const [liveStatus, setLiveStatus] = useState('Подключаем обновления…');
   const [title, setTitle] = useState('Для тебя');
   const [requiresPassword, setRequiresPassword] = useState(false);
   const [token, setToken] = useState<string | null>(null);
@@ -92,6 +94,31 @@ export default function ReaderPage() {
   }, [isPreview]);
 
   useEffect(() => {
+    let cancelled = false;
+    let request = 0;
+    const updateSettings = async () => {
+      const current = ++request;
+      try {
+        const settings = await fetchReaderSettings();
+        if (cancelled || current !== request) return;
+        setTitle(settings.reader_title || 'Для тебя');
+        setRequiresPassword(settings.reader_requires_password);
+        setDisplaySettings(readDisplaySettingsFromTheme(settings.theme ?? null));
+        localStorage.setItem(DISPLAY_SETTINGS_KEY, JSON.stringify(settings.theme ?? {}));
+        const themeMap: Record<string, string> = { cream: '--cream', blush: '--blush', peach: '--peach', lavender: '--lavender', burgundy: '--burgundy', gold: '--gold', ink: '--ink', paper: '--paper' };
+        for (const [key, variable] of Object.entries(themeMap)) {
+          const value = settings.theme?.[key];
+          if (typeof value === 'string') document.documentElement.style.setProperty(variable, value);
+          else document.documentElement.style.removeProperty(variable);
+        }
+      } catch { if (!cancelled) setLiveStatus('Настройки обновятся после восстановления связи'); }
+    };
+    window.addEventListener(READER_CHANGED, updateSettings);
+    const stop = watchReader(setLiveStatus);
+    return () => { cancelled = true; stop(); window.removeEventListener(READER_CHANGED, updateSettings); };
+  }, []);
+
+  useEffect(() => {
     const root = document.documentElement;
     root.dataset.readerMotion = prefersLiteReaderMotion(displaySettings.motionMode) ? 'lite' : 'full';
     return () => { delete root.dataset.readerMotion; };
@@ -136,6 +163,7 @@ export default function ReaderPage() {
   const petals = Array.from({ length: 4 }, (_, index) => ({ left: `${14 + index * 23}%`, delay: `${index * 2.4}s`, duration: `${18 + (index % 2) * 5}s`, size: `${6 + (index % 2) * 2}px` }));
   return (
     <main className="reader-shell relative min-h-screen overflow-hidden bg-[#0B0B0D] text-[#F4EFE6]">
+      {isPreview && <div role="status" className="fixed left-3 top-3 z-50 max-w-[calc(100%-1.5rem)] rounded-xl bg-black/85 px-4 py-3 text-sm text-white">{liveStatus}</div>}
       <BackgroundMusic token={token} settings={displaySettings} />
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-10 overflow-hidden">
         {petals.map((petal, index) => <svg key={index} className="petal absolute top-[-5vh] text-gold opacity-20" style={{ left: petal.left, animationDelay: petal.delay, animationDuration: petal.duration, width: petal.size, height: petal.size }} viewBox="0 0 20 20"><path d="M10 1C15 4 18 8 10 18C2 8 5 4 10 1Z" fill="currentColor"/></svg>)}

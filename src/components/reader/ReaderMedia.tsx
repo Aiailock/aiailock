@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AudioLines, FileText, Image as ImageIcon, Play } from 'lucide-react';
 import { fetchMediaUrl, peekMediaUrl, readerMediaInput } from '@/lib/readerApi';
 import type { PublicTimelineRow } from '@/lib/readerApi';
@@ -9,13 +9,20 @@ interface Props { row: PublicTimelineRow; token: string; }
 
 export default function ReaderMedia({ row, token }: Props) {
   const externalUrl = safeRemoteUrl(row.style?.externalMediaUrl);
-  const input = readerMediaInput(row);
+  const input = useMemo(() => readerMediaInput(row), [row]);
   const warmed = peekMediaUrl(input);
   const [url, setUrl] = useState<string | null>(externalUrl ?? warmed?.url ?? null);
   const [thumb, setThumb] = useState<string | null>(warmed?.thumbnailUrl ?? null);
   const [error, setError] = useState(false);
   const [nearViewport, setNearViewport] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const cached = peekMediaUrl(input);
+    setUrl(externalUrl ?? cached?.url ?? null);
+    setThumb(cached?.thumbnailUrl ?? null);
+    setError(false);
+  }, [input, externalUrl]);
 
   useEffect(() => {
     const root = rootRef.current;
